@@ -10,6 +10,10 @@
   --warn-text: #6b4d00;
   --error: #b3261e;
   --neg: #b3261e;
+  --track: #e3e8e6;
+  --b-ok: #1f6f5c;
+  --b-warn: #b7791f;
+  --b-over: #b3261e;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -25,6 +29,10 @@
     --warn-text: #f3d98a;
     --error: #ff8a80;
     --neg: #ff8a80;
+    --track: #2a3330;
+    --b-ok: #4fb89c;
+    --b-warn: #e0b040;
+    --b-over: #ff8a80;
   }
 }
 
@@ -102,7 +110,7 @@ button:disabled { opacity: .5; cursor: default; }
 main { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 12px 16px 96px; }
 .tabs {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 5;
-  display: grid; grid-template-columns: repeat(3, 1fr);
+  display: grid; grid-template-columns: repeat(4, 1fr);
   background: var(--card); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -114,7 +122,8 @@ main { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 12px 16p
   background: var(--card); border: 1px solid var(--line); border-radius: 14px;
   padding: 10px; margin-bottom: 10px; display: grid; gap: 8px;
 }
-.line-row { display: grid; grid-template-columns: 1fr 1fr 44px; gap: 8px; align-items: center; }
+.line-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(96px, 0.8fr) 40px; gap: 8px; align-items: center; }
+.line-row > * { min-width: 0; }
 .line.invalid { border-color: var(--error); }
 .actions { display: flex; gap: 10px; margin-top: 4px; }
 .actions button { flex: 1; }
@@ -166,10 +175,37 @@ details.month > summary .m-meta { font-weight: 400; color: var(--muted); font-si
 button.danger { color: var(--error); border-color: var(--error); }
 @media (min-width: 600px) { #edit-dlg { margin: auto; border-radius: 18px; } }
 
+/* Budget */
+.b-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.b-nav h2 { margin: 0; font-size: 18px; text-align: center; flex: 1; }
+.b-nav .icon-btn { font-size: 32px; color: var(--accent); }
+.b-nav .icon-btn:disabled { color: var(--muted); }
+.b-total { text-align: center; color: var(--muted); font-size: 14px; margin: 4px 0 12px; }
+#b-list { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 4px 14px; }
+.b-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.b-row:last-child { border-bottom: none; }
+.b-top { display: flex; justify-content: space-between; gap: 8px; font-weight: 500; }
+.b-pct { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.b-track { height: 10px; background: var(--track); border-radius: 5px; margin: 6px 0 4px; overflow: hidden; }
+.b-fill { height: 100%; border-radius: 5px; background: var(--b-ok); min-width: 2px; }
+.b-row.warn .b-fill { background: var(--b-warn); }
+.b-row.over .b-fill { background: var(--b-over); }
+.b-row.over .b-pct { color: var(--b-over); }
+.b-sub { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+#b-other { margin-top: 14px; }
+#b-other h3 { font-size: 14px; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+
 #imp-result table { border-collapse: collapse; width: 100%; margin-top: 8px; }
 #imp-result td { border-bottom: 1px solid var(--line); padding: 4px; vertical-align: top; }
 #imp-result .bad { color: var(--error); }
 
 @media (max-width: 360px) {
   .filters { grid-template-columns: 1fr; }
+}
+
+/* Narrow phones (iPhone 13 390px, Fold5 outer 344px): keep "November 2026" readable.
+   Text stays 16px: iPhones zoom the page when a smaller input is tapped. */
+@media (max-width: 400px) {
+  .line-row { grid-template-columns: minmax(0, 1fr) 80px 34px; gap: 6px; }
+  .line-row .l-month { padding: 8px 6px; }
 }

@@ -74,6 +74,18 @@
         <p id="f-more" class="muted small" hidden></p>
       </div>
 
+      <!-- Budget -->
+      <div id="page-budget" class="page" hidden>
+        <div class="b-nav">
+          <button id="b-prev" type="button" class="icon-btn" aria-label="Previous month">&#8249;</button>
+          <h2 id="b-month"></h2>
+          <button id="b-next" type="button" class="icon-btn" aria-label="Next month">&#8250;</button>
+        </div>
+        <div id="b-total" class="b-total"></div>
+        <div id="b-list"></div>
+        <div id="b-other"></div>
+      </div>
+
       <!-- Import -->
       <div id="page-import" class="page" hidden>
         <p class="small">Paste rows copied from Excel with the columns
@@ -91,6 +103,7 @@
       <button data-page="add" class="active">Add</button>
       <button data-page="history">History</button>
       <button data-page="filter">Filter</button>
+      <button data-page="budget">Budget</button>
     </nav>
   </section>
 
@@ -117,7 +130,7 @@
         <input type="text" inputmode="decimal" class="l-amount" placeholder="Amount" aria-label="Amount">
         <button type="button" class="l-del icon-btn" aria-label="Remove line">&times;</button>
       </div>
-      <select class="l-cat" aria-label="Category"><option value="">Category…</option></select>
+      <select class="l-cat" aria-label="Category"></select>
       <input type="text" class="l-comment" placeholder="Comment / detail" aria-label="Comment">
     </div>
   </template>

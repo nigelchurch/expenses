@@ -12,21 +12,42 @@ window.APP_CONFIG = {
   // Shown in front of amounts, e.g. '£' or '€'. Leave '' for none.
   CURRENCY: '฿',
 
+  // New lines start on this category (saves a tap most of the time)
+  DEFAULT_CATEGORY: 'Groceries (food)',
+
+  // Monthly budget per category (categories not listed have no budget)
+  BUDGETS: {
+    'Pocket Money (NIG)': 5000,
+    'Pocket Money (JOP)': 5000,
+    'Groceries (food)': 14000,
+    'Eating Out': 5000,
+    'Domestic': 22343,
+    'Beer': 6000,
+    'Car Expenses': 3000,
+    'Cat expenses': 3000,
+    'Health expenses': 3000,
+    'Digital': 4032.33,
+    'Travel and Holiday': 10000,
+    'One-off expenses': 2000,
+    'Quintara': 15271,
+  },
+
+  // Drop-down order
   CATEGORIES: [
-    'Pocket Money (NIG)',
-    'Pocket Money (JOP)',
     'Groceries (food)',
     'Eating Out',
     'Domestic',
-    'Beer',
-    'Car Expenses',
     'Cat expenses',
-    'Health expenses',
     'Digital',
-    'Travel and Holiday',
-    'One-off expenses',
-    'Quintara',
+    'Health expenses',
+    'Beer',
     'Investment (+/-)',
+    'Travel and Holiday',
+    'Quintara',
+    'Pocket Money (JOP)',
+    'Pocket Money (NIG)',
+    'Car Expenses',
+    'One-off expenses',
     'Planned expenses',
     'Charitable expenses',
     'Other',

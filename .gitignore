@@ -2,3 +2,4 @@ tools/screenshots/
 __pycache__/
 history.xlsx
 *.xlsx
+private/

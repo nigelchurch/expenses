@@ -1,5 +1,5 @@
 // Bump VERSION whenever any app file changes so phones pick up the new version.
-const VERSION = 'v2';
+const VERSION = 'v6';
 const CACHE = `expenses-${VERSION}`;
 const FILES = [
   './',

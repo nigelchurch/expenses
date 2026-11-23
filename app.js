@@ -6,7 +6,7 @@ const BASE = CFG.SUPABASE_URL.replace(/\/+$/, '');
 const KEY = CFG.SUPABASE_ANON_KEY;
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const PAGE_TITLES = { add: 'Add expenses', history: 'History', filter: 'Filter', import: 'Import history' };
+const PAGE_TITLES = { add: 'Add expenses', history: 'History', filter: 'Filter', budget: 'Budget', import: 'Import history' };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -239,7 +239,7 @@ function showApp() {
 }
 function showPage(page) {
   currentPage = page;
-  for (const p of ['add', 'history', 'filter', 'import']) $(`#page-${p}`).hidden = p !== page;
+  for (const p of ['add', 'history', 'filter', 'budget', 'import']) $(`#page-${p}`).hidden = p !== page;
   $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   $('#page-title').textContent = PAGE_TITLES[page];
   $('#menu').hidden = true;
@@ -249,6 +249,59 @@ function showPage(page) {
 function renderCurrent() {
   if (currentPage === 'history') renderHistory();
   if (currentPage === 'filter') renderFilter();
+  if (currentPage === 'budget') renderBudget();
+  if (currentPage === 'add') { const s = spending(); $$('#lines .line').forEach(n => updateCatLabels(n, s)); }
+}
+
+/* ---------- Budget ---------- */
+// spent[month][category] = total, from server rows + rows waiting to upload
+function spending() {
+  const s = {};
+  for (const r of allRows()) {
+    const m = (s[r.month] ||= {});
+    m[r.category] = (m[r.category] || 0) + r.amount;
+  }
+  return s;
+}
+const pctOf = (spent, budget) => Math.round((spent / budget) * 100);
+// Show "Groceries (food) · 70%" in a line's drop-down, for that line's month
+function updateCatLabels(node, spent = spending()) {
+  const month = `${$('.l-month', node).value}-01`;
+  const used = spent[month] || {};
+  for (const o of $('.l-cat', node).options) {
+    const b = CFG.BUDGETS[o.value];
+    o.textContent = b ? `${o.value} · ${pctOf(used[o.value] || 0, b)}%` : o.value;
+  }
+}
+let budgetMonth = currentMonthIso();
+function shiftMonth(iso, n) {
+  const [y, m] = iso.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+function renderBudget() {
+  const used = spending()[budgetMonth] || {};
+  $('#b-month').textContent = fmtMonthHeading(budgetMonth);
+  $('#b-next').disabled = budgetMonth >= currentMonthIso();
+  let totSpent = 0, totBudget = 0, html = '';
+  for (const cat of CFG.CATEGORIES.filter(c => CFG.BUDGETS[c])) {
+    const budget = CFG.BUDGETS[cat], spent = used[cat] || 0, pct = pctOf(spent, budget);
+    totSpent += spent; totBudget += budget;
+    const over = spent > budget;
+    const state = over ? 'over' : pct >= 80 ? 'warn' : '';
+    const left = budget - spent;
+    html += `<div class="b-row ${state}" title="${esc(cat)}: ${fmtAmount(spent)} of ${fmtAmount(budget)}">
+      <div class="b-top"><span>${esc(cat)}</span><span class="b-pct">${over ? '▲ ' : ''}${pct}%</span></div>
+      <div class="b-track"><div class="b-fill" style="width:${Math.max(0, Math.min(pct, 100))}%"></div></div>
+      <div class="b-sub">${fmtAmount(spent)} of ${fmtAmount(budget)} · ${left >= 0 ? `${fmtAmount(left)} left` : `over by ${fmtAmount(-left)}`}</div>
+    </div>`;
+  }
+  $('#b-list').innerHTML = html;
+  $('#b-total').textContent = `Budgeted categories: ${fmtAmount(totSpent)} of ${fmtAmount(totBudget)} (${pctOf(totSpent, totBudget)}%)`;
+  const others = Object.entries(used).filter(([c]) => !CFG.BUDGETS[c]);
+  $('#b-other').innerHTML = others.length
+    ? `<h3>No budget set</h3><div id="f-list">${others.map(([c, v]) => rowHtml({ category: c, amount: v, comment: '' }).replace('role="button" tabindex="0"', '')).join('')}</div>`
+    : '';
 }
 function updateBanner() {
   const b = $('#outbox-banner');
@@ -282,15 +335,17 @@ function addLine(data = {}) {
   const lines = $$('#lines .line');
   const prevMonth = lines.length ? $('.l-month', lines[lines.length - 1]).value : '';
   $('.l-month', node).value = data.month || prevMonth || currentMonthIso().slice(0, 7);
-  categoryOptions($('.l-cat', node), data.category);
+  categoryOptions($('.l-cat', node), data.category || CFG.DEFAULT_CATEGORY);
   $('.l-amount', node).value = data.amount ?? '';
   $('.l-comment', node).value = data.comment ?? '';
   $('.l-del', node).addEventListener('click', () => {
     if ($$('#lines .line').length > 1) node.remove();
-    else { $('.l-amount', node).value = ''; $('.l-comment', node).value = ''; $('.l-cat', node).value = ''; }
+    else { $('.l-amount', node).value = ''; $('.l-comment', node).value = ''; $('.l-cat', node).value = CFG.DEFAULT_CATEGORY; }
     saveDraft();
   });
+  $('.l-month', node).addEventListener('change', () => updateCatLabels(node));
   $('#lines').append(node);
+  updateCatLabels(node);
   return node;
 }
 function readLines() {
@@ -315,7 +370,7 @@ async function uploadLines() {
   const rows = [];
   let bad = 0;
   for (const l of lines) {
-    const empty = !l.category && !l.amount && !l.comment;
+    const empty = !l.amount && !l.comment; // category is always pre-filled, so it doesn't count
     l.node.classList.remove('invalid');
     if (empty) continue;
     const amount = parseAmount(l.amount);
@@ -580,6 +635,8 @@ function init() {
   $('#f-cat').addEventListener('change', renderFilter);
   $('#f-month').addEventListener('change', renderFilter);
   $('#f-copy').addEventListener('click', copyForExcel);
+  $('#b-prev').addEventListener('click', () => { budgetMonth = shiftMonth(budgetMonth, -1); renderBudget(); });
+  $('#b-next').addEventListener('click', () => { budgetMonth = shiftMonth(budgetMonth, 1); renderBudget(); });
 
   $('#history-list').addEventListener('toggle', e => fillMonth(e.target), true);
   for (const list of ['#history-list', '#f-list']) {
@@ -600,12 +657,19 @@ function init() {
   setInterval(() => { if (session && outbox.length && document.visibilityState === 'visible') sync(); }, 20000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
 
-  const draft = store.get('draft', []);
+  // Restore unsent lines, but only ones with something typed in; blank lines start fresh on the default category
+  const draft = store.get('draft', []).filter(d => d.amount || d.comment);
   if (draft.length) draft.forEach(d => addLine(d)); else addLine();
 
   if (session) showApp(); else showLogin();
 
-  if ('serviceWorker' in navigator) {
+  // On this PC (VS Code Live Server etc.) skip the offline cache so every refresh shows the latest files.
+  // Add ?sw to the address to test offline/install behaviour locally.
+  const localDev = ['localhost', '127.0.0.1'].includes(location.hostname) && !new URLSearchParams(location.search).has('sw');
+  if (localDev && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
+    if (window.caches) caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
+  } else if ('serviceWorker' in navigator) {
     const hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js').catch(() => {});
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) location.reload(); });

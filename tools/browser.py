@@ -17,7 +17,7 @@ PORT = 8765
 MOCK = "https://mock-project.supabase.co"
 APP_FILES = ["./", "index.html", "styles.css", "app.js", "config.js", "manifest.webmanifest",
              "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"]
-SIZES = {"fold7-outer": (411, 960), "fold7-inner": (750, 832), "fold5-outer": (344, 882), "desktop": (1100, 800)}
+SIZES = {"iphone13": (390, 844), "fold7-outer": (411, 960), "fold7-inner": (750, 832), "fold5-outer": (344, 882), "desktop": (1100, 800)}
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -144,7 +144,7 @@ def check():
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.on("console", lambda m: m.type == "error" and errors.append(m.text))
         page.on("pageerror", lambda e: errors.append(str(e)))
-        base = f"http://127.0.0.1:{PORT}/"
+        base = f"http://127.0.0.1:{PORT}/?sw"  # ?sw = keep the service worker on for the checks
 
         page.goto(base)
         page.wait_for_selector("#login:not([hidden])")
@@ -176,9 +176,23 @@ def check():
         rec("negative amount kept", any(r["amount"] == -250 for r in new))
 
         # Blank line validation
-        page.select_option("#lines .line:nth-child(1) .l-cat", "Beer")
+        page.fill("#lines .line:nth-child(1) .l-comment", "no amount given")
         page.click("#upload")
         rec("line without amount is flagged", page.locator("#lines .line.invalid").count() == 1)
+        page.click("#lines .line:nth-child(1) .l-del")
+        rec("new line defaults to Groceries", page.input_value("#lines .line:nth-child(1) .l-cat") == "Groceries (food)")
+        page.click("#add-line")
+        rec("extra line also defaults to Groceries", page.input_value("#lines .line:nth-child(2) .l-cat") == "Groceries (food)")
+        order = page.eval_on_selector_all("#lines .line:nth-child(1) .l-cat option", "os => os.map(o => o.value)")
+        rec("drop-down in new order", order[:3] == ["Groceries (food)", "Eating Out", "Domestic"] and order[10] == "Pocket Money (JOP)", str(order))
+        page.click("#lines .line:nth-child(2) .l-del")
+        page.select_option("#lines .line:nth-child(1) .l-cat", "Beer")  # blank line, category changed
+        page.reload(); page.wait_for_selector("#app:not([hidden])")
+        rec("blank line back to Groceries after reopening", page.input_value("#lines .line:nth-child(1) .l-cat") == "Groceries (food)")
+        page.select_option("#lines .line:nth-child(1) .l-cat", "Beer"); page.fill("#lines .line:nth-child(1) .l-amount", "99")
+        page.reload(); page.wait_for_selector("#app:not([hidden])")
+        rec("half-filled line kept after reopening", page.input_value("#lines .line:nth-child(1) .l-cat") == "Beer"
+            and page.input_value("#lines .line:nth-child(1) .l-amount") == "99")
         page.click("#lines .line:nth-child(1) .l-del")
 
         # History
@@ -213,6 +227,23 @@ def check():
         page.click("#f-copy")
         clip = page.evaluate("navigator.clipboard.readText()")
         rec("copy for Excel (TSV, '1 NOV 26' dates)", clip.splitlines()[1].startswith("1 NOV 26\t"), clip.splitlines()[1])
+
+        # Budget tab + % in Add drop-down
+        groc = sum(r["amount"] for r in mock.rows if r["month"] == "2026-11-01" and r["category"] == "Groceries (food)")
+        exp_pct = round(groc / 14000 * 100)
+        page.click(".tabs button[data-page=budget]")
+        page.wait_for_selector("#b-list .b-row")
+        first = page.text_content("#b-list .b-row:first-child")
+        rec("budget tab: Groceries % for this month", f"{exp_pct}%" in first and "Groceries" in first, f"{first.split()[:6]} expected {exp_pct}%")
+        rec("budget tab lists 13 budgeted categories", page.locator("#b-list .b-row").count() == 13)
+        page.screenshot(path=str(SHOTS / "09-budget.png"), full_page=True)
+        page.click("#b-prev")
+        rec("budget month back to October", page.text_content("#b-month") == "October 2026")
+        page.click("#b-next")
+        page.click(".tabs button[data-page=add]")
+        lbl = page.eval_on_selector("#lines .line:nth-child(1) .l-cat", "s => s.options[s.selectedIndex].textContent")
+        rec("Add drop-down shows % used", lbl == f"Groceries (food) · {exp_pct}%", lbl)
+        page.click(".tabs button[data-page=filter]")
 
         # Edit + delete synced rows (from Filter, Nov 2026)
         page.select_option("#f-month", "2026-11-01")
@@ -300,7 +331,7 @@ def check():
         # Screen sizes
         for name, (w, h) in SIZES.items():
             page.set_viewport_size({"width": w, "height": h})
-            for tab in ["add", "history", "filter"]:
+            for tab in ["add", "history", "filter", "budget"]:
                 page.click(f".tabs button[data-page={tab}]")
                 page.wait_for_timeout(150)
                 page.screenshot(path=str(SHOTS / f"size-{name}-{tab}.png"))

@@ -1,0 +1,5 @@
+{
+  // This project's own Live Server port, so it never shows another app's cached copy from :5500
+  "liveServer.settings.port": 5512,
+  "liveServer.settings.root": "/"
+}
