@@ -6,7 +6,8 @@
   <title>Expenses</title>
   <meta name="theme-color" content="#4fb89c">
   <meta name="color-scheme" content="dark">
-  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes"> <!-- older iPhones still read this one -->
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Expenses">
   <link rel="manifest" href="manifest.webmanifest">
@@ -48,13 +49,13 @@
       <div id="page-add" class="page">
         <div id="entry" class="line">
           <div class="entry-grid">
-            <input type="month" class="l-month" aria-label="Month" required>
+            <input type="month" class="l-month" name="month" aria-label="Month" required>
             <button type="button" class="l-type type-btn" data-type="expense" aria-pressed="false" aria-label="Expense or income (tap to switch)">Expense</button>
-            <input type="text" inputmode="decimal" class="l-amount" placeholder="Amount" aria-label="Amount">
+            <input type="text" inputmode="decimal" class="l-amount" name="amount" placeholder="Amount" aria-label="Amount">
             <button type="button" class="l-del icon-btn" aria-label="Clear this entry">&times;</button>
           </div>
-          <select class="l-cat" aria-label="Category"></select>
-          <input type="text" class="l-comment" placeholder="Comment / detail" aria-label="Comment">
+          <select class="l-cat" name="category" aria-label="Category"></select>
+          <input type="text" class="l-comment" name="comment" placeholder="Comment / detail" aria-label="Comment">
         </div>
         <div class="actions">
           <button id="add-line" type="button">+ New line</button>

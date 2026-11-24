@@ -247,11 +247,89 @@ function showPage(page) {
   renderCurrent();
   window.scrollTo(0, 0);
 }
-function renderCurrent() {
-  if (currentPage === 'history') renderHistory();
-  if (currentPage === 'filter') renderFilter();
-  if (currentPage === 'budget') renderBudget();
-  if (currentPage === 'add') updateCatLabels(form());
+function renderCurrent() { renderPage(currentPage); }
+function renderPage(p) {
+  if (p === 'history') renderHistory();
+  if (p === 'filter') renderFilter();
+  if (p === 'budget') renderBudget();
+  if (p === 'add') updateCatLabels(form());
+}
+
+/* ---------- Swipe between tabs: the page follows the finger ---------- */
+const TAB_ORDER = ['add', 'history', 'filter', 'budget'];
+function initSwipe() {
+  const main = $('main');
+  let st = null; // current drag
+  const clear = el => { el.style.transition = el.style.transform = el.style.position = el.style.top = el.style.left = el.style.right = ''; };
+
+  main.addEventListener('touchstart', e => {
+    if (st || e.touches.length !== 1 || !TAB_ORDER.includes(currentPage)) return;
+    if (e.target.closest('input, select, textarea')) return; // let text boxes and drop-downs work normally
+    const t = e.touches[0];
+    st = { x: t.clientX, y: t.clientY, t: Date.now(), dx: 0, axis: null, shown: null };
+  }, { passive: true });
+
+  main.addEventListener('touchmove', e => {
+    if (!st || st.done) return;
+    const t = e.touches[0];
+    const dx = t.clientX - st.x, dy = t.clientY - st.y;
+    if (!st.axis) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      st.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y';
+      if (st.axis === 'x') {
+        const i = TAB_ORDER.indexOf(currentPage);
+        st.cur = $(`#page-${currentPage}`);
+        st.w = st.cur.offsetWidth + 16;
+        st.prev = TAB_ORDER[i - 1];
+        st.next = TAB_ORDER[i + 1];
+      }
+    }
+    if (st.axis !== 'x') return;
+    if (e.cancelable) e.preventDefault();
+    const nb = neighbour(dx < 0 ? st.next : st.prev);
+    st.dx = nb ? dx : dx * 0.25; // resist at the first / last tab
+    st.cur.style.transform = `translateX(${st.dx}px)`;
+    if (nb) nb.style.transform = `translateX(${st.dx + (dx < 0 ? st.w : -st.w)}px)`;
+  }, { passive: false });
+
+  // Show the page beside the current one, lined up with the top of the screen
+  function neighbour(name) {
+    if (st.shown && st.shown.name !== name) { clear(st.shown.el); st.shown.el.hidden = true; st.shown = null; }
+    if (!name) return null;
+    if (st.shown) return st.shown.el;
+    const el = $(`#page-${name}`);
+    renderPage(name);
+    el.hidden = false;
+    const barH = $('.topbar').offsetHeight;
+    const top = Math.max(0, window.scrollY - (main.offsetTop - barH)) + 12;
+    Object.assign(el.style, { position: 'absolute', top: `${top}px`, left: '16px', right: '16px' });
+    st.shown = { name, el };
+    return el;
+  }
+
+  function end(cancelled) {
+    if (!st) return;
+    const s = st;
+    if (s.axis !== 'x') { st = null; return; }
+    s.done = true;
+    const speed = Math.abs(s.dx) / Math.max(1, Date.now() - s.t);
+    const go = !cancelled && s.shown && (Math.abs(s.dx) > s.w * 0.25 || (speed > 0.5 && Math.abs(s.dx) > 30));
+    const toNext = s.dx < 0;
+    const els = [s.cur, s.shown?.el].filter(Boolean);
+    els.forEach(el => { el.style.transition = 'transform .2s ease-out'; });
+    requestAnimationFrame(() => {
+      s.cur.style.transform = go ? `translateX(${toNext ? -s.w : s.w}px)` : 'translateX(0)';
+      if (s.shown) s.shown.el.style.transform = go ? 'translateX(0)' : `translateX(${toNext ? s.w : -s.w}px)`;
+    });
+    setTimeout(() => {
+      els.forEach(clear);
+      if (go) showPage(s.shown.name);
+      else if (s.shown) s.shown.el.hidden = true;
+      st = null;
+    }, 220);
+  }
+  main.addEventListener('touchend', () => end(false));
+  main.addEventListener('touchcancel', () => end(true));
 }
 
 /* ---------- Budget ---------- */
@@ -681,6 +759,7 @@ function init() {
   $('#b-prev').addEventListener('click', () => { budgetMonth = shiftMonth(budgetMonth, -1); renderBudget(); });
   $('#b-next').addEventListener('click', () => { budgetMonth = shiftMonth(budgetMonth, 1); renderBudget(); });
 
+  initSwipe();
   $('#history-list').addEventListener('toggle', e => fillMonth(e.target), true);
   for (const list of ['#history-list', '#f-list']) {
     $(list).addEventListener('click', e => { const row = e.target.closest('.row'); if (row) openEditor(row.dataset.key); });

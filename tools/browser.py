@@ -125,6 +125,21 @@ class MockSupabase:
         return ok({"message": "not found"}, 404)
 
 
+# Deprecated / problem markup that Edge only reports with DevTools open, so check the files directly.
+LINT_RULES = [
+    ("index.html", lambda s: 'name="apple-mobile-web-app-capable"' in s and 'name="mobile-web-app-capable"' not in s,
+     'apple-mobile-web-app-capable without the standard <meta name="mobile-web-app-capable" content="yes">'),
+    ("index.html", lambda s: "user-scalable=no" in s or "maximum-scale=1" in s, "zoom disabled in viewport meta (accessibility)"),
+    ("index.html", lambda s: 'name="viewport"' not in s, "missing viewport meta"),
+    ("index.html", lambda s: 'rel="manifest"' not in s, "missing manifest link"),
+]
+
+
+def rec_lint(rec):
+    problems = [msg for f, bad, msg in LINT_RULES if bad((ROOT / f).read_text(encoding="utf-8"))]
+    rec("no deprecated / missing page tags", not problems, "; ".join(problems))
+
+
 def check():
     from playwright.sync_api import sync_playwright
     SHOTS.mkdir(exist_ok=True)
@@ -142,8 +157,15 @@ def check():
                                                    permissions=["clipboard-read", "clipboard-write"])
         ctx.route(f"{MOCK}/**", mock.handle)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.on("console", lambda m: m.type == "error" and errors.append(m.text))
-        page.on("pageerror", lambda e: errors.append(str(e)))
+        # Collect errors AND warnings from every channel: page console, browser log, DevTools "Issues"
+        page.on("console", lambda m: m.type in ("error", "warning") and errors.append(f"console {m.type}: {m.text}"))
+        page.on("pageerror", lambda e: errors.append(f"page error: {e}"))
+        logcdp = ctx.new_cdp_session(page)
+        logcdp.on("Log.entryAdded", lambda e: e["entry"]["level"] in ("error", "warning")
+                  and errors.append(f"browser {e['entry']['level']}: {e['entry']['text']}"))
+        logcdp.on("Audits.issueAdded", lambda e: errors.append(f"DevTools issue: {e['issue']['code']} {json.dumps(e['issue'].get('details', {}))[:200]}"))
+        logcdp.send("Log.enable"); logcdp.send("Audits.enable")
+        rec_lint(rec)
         base = f"http://127.0.0.1:{PORT}/?sw"  # ?sw = keep the service worker on for the checks
 
         page.goto(base)
@@ -342,6 +364,40 @@ def check():
         rec("re-importing same paste adds no duplicates", len(mock.rows) == n2 + 4)
         page.screenshot(path=str(SHOTS / "07-import.png"))
 
+        # Swipe between tabs (touch, page follows the finger)
+        page.click(".tabs button[data-page=add]")
+        cdp.send("Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 1})
+
+        def swipe(x0, x1, y=700, steps=8, check_mid=False):
+            cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x0, "y": y}]})
+            mid = None
+            for k in range(1, steps + 1):
+                cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x0 + (x1 - x0) * k / steps, "y": y}]})
+                if check_mid and k == steps // 2:
+                    page.screenshot(path=str(SHOTS / "10-mid-swipe.png"))
+                    mid = page.evaluate("[document.querySelector('#page-add').style.transform, !document.querySelector('#page-history').hidden]")
+            cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+            page.wait_for_timeout(400)
+            return mid
+
+        mid = swipe(330, 60, check_mid=True)
+        rec("page follows the finger mid-swipe", mid and mid[0].startswith("translateX(-") and mid[1], str(mid))
+        rec("swipe left: Add -> History", page.text_content("#page-title") == "History")
+        swipe(60, 330)
+        rec("swipe right: History -> Add", page.text_content("#page-title") == "Add expenses")
+        swipe(300, 260)
+        rec("short drag springs back", page.text_content("#page-title") == "Add expenses"
+            and page.evaluate("document.querySelector('#page-history').hidden"))
+        swipe(60, 330)
+        rec("no page before Add (stays put)", page.text_content("#page-title") == "Add expenses")
+        box = page.locator("#entry .l-comment").bounding_box()
+        swipe(box["x"] + box["width"] - 10, 40, y=box["y"] + box["height"] / 2)
+        rec("swipe starting on a text box is ignored", page.text_content("#page-title") == "Add expenses")
+        for _ in range(3):
+            swipe(330, 60)
+        rec("swipe through to Budget", page.text_content("#page-title") == "Budget")
+        cdp.send("Emulation.setTouchEmulationEnabled", {"enabled": False})
+
         # Screen sizes
         for name, (w, h) in SIZES.items():
             page.set_viewport_size({"width": w, "height": h})
@@ -362,9 +418,10 @@ def check():
         page.wait_for_selector("#login:not([hidden])")
         rec("sign out", True)
 
-        errs = [e for e in errors if "internetdisconnected" not in e.lower() and "ERR_INTERNET_DISCONNECTED" not in e
-                and "status of 400" not in e]  # 400 = the deliberate wrong-password test
-        rec("no JavaScript/console errors", not errs, "; ".join(errs[:5]))
+        expected = ("internetdisconnected", "err_internet_disconnected",  # the deliberate offline tests
+                    "status of 400")                                      # the deliberate wrong-password test
+        errs = list(dict.fromkeys(e for e in errors if not any(x in e.lower() for x in expected)))
+        rec("no console errors or warnings (page, browser log, DevTools issues)", not errs, " | ".join(errs[:8]))
         ctx.close()
     httpd.shutdown()
     failed = [r for r in results if not r[1]]
