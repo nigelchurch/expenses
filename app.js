@@ -28,10 +28,11 @@ function fmtMonthHeading(iso) {
   const [y, m] = iso.split('-').map(Number);
   return `${MONTH_NAMES[m - 1]} ${y}`;
 }
+// Money in is stored negative. On screen it shows without the minus, in green (amtHtml); exports keep the minus.
 function fmtAmount(n) {
-  const s = Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return (n < 0 ? '-' : '') + CFG.CURRENCY + s;
+  return CFG.CURRENCY + Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+const amtHtml = n => `<span class="${n < 0 ? 'inc' : ''}">${fmtAmount(n)}</span>`;
 function currentMonthIso() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
@@ -293,7 +294,7 @@ function renderBudget() {
     html += `<div class="b-row ${state}" title="${esc(cat)}: ${fmtAmount(spent)} of ${fmtAmount(budget)}">
       <div class="b-top"><span>${esc(cat)}</span><span class="b-pct">${over ? '▲ ' : ''}${pct}%</span></div>
       <div class="b-track"><div class="b-fill" style="width:${Math.max(0, Math.min(pct, 100))}%"></div></div>
-      <div class="b-sub">${fmtAmount(spent)} of ${fmtAmount(budget)} · ${left >= 0 ? `${fmtAmount(left)} left` : `over by ${fmtAmount(-left)}`}</div>
+      <div class="b-sub">${amtHtml(spent)} of ${fmtAmount(budget)} · ${left >= 0 ? `${fmtAmount(left)} left` : `over by ${fmtAmount(-left)}`}</div>
     </div>`;
   }
   $('#b-list').innerHTML = html;
@@ -339,7 +340,9 @@ function setForm(d = {}) {
   const f = form();
   $('.l-month', f).value = d.month || $('.l-month', f).value || currentMonthIso().slice(0, 7);
   $('.l-cat', f).value = d.category || CFG.DEFAULT_CATEGORY;
-  $('.l-amount', f).value = d.amount ?? '';
+  const amt = String(d.amount ?? '').trim();
+  setType($('.l-type', f), d.type || (amt.startsWith('-') ? 'income' : 'expense'));
+  $('.l-amount', f).value = amt.replace(/^-/, '');
   $('.l-comment', f).value = d.comment ?? '';
   f.classList.remove('invalid');
   updateCatLabels(f);
@@ -349,6 +352,7 @@ function readForm() {
   return {
     month: $('.l-month', f).value,
     category: $('.l-cat', f).value,
+    type: $('.l-type', f).dataset.type,
     amount: $('.l-amount', f).value.trim(),
     comment: $('.l-comment', f).value.trim(),
   };
@@ -366,7 +370,7 @@ function stageForm() {
     toast('Month, category and amount are needed.');
     return false;
   }
-  staged.unshift({ id: uuid(), ...d, amount: String(parseAmount(d.amount)) });
+  staged.unshift({ id: uuid(), ...d, amount: String(signed(d.type, parseAmount(d.amount))) });
   setForm({ month: d.month });
   renderStaged();
   saveDraft();
@@ -375,11 +379,11 @@ function stageForm() {
 function renderStaged() {
   const total = staged.reduce((t, d) => t + parseAmount(d.amount), 0);
   $('#staged-head').hidden = !staged.length;
-  $('#staged-head').textContent = `Ready to upload: ${staged.length} · ${fmtAmount(total)}`;
+  $('#staged-head').innerHTML = `Ready to upload: ${staged.length} · ${amtHtml(total)}`;
   $('#staged').innerHTML = staged.map(d => {
     const amt = parseAmount(d.amount);
     return `<div class="staged" data-id="${d.id}">
-      <div class="s-main"><span>${esc(d.category)}</span><span class="s-amt${amt < 0 ? ' neg' : ''}">${fmtAmount(amt)}</span></div>
+      <div class="s-main"><span>${esc(d.category)}</span><span class="s-amt">${amtHtml(amt)}</span></div>
       <div class="s-sub">${fmtDate(`${d.month}-01`)}${d.comment ? ` · ${esc(d.comment)}` : ''}</div>
       <button type="button" class="s-edit small-btn">Edit</button>
     </div>`;
@@ -396,10 +400,15 @@ function editStaged(id) {
   saveDraft();
   window.scrollTo(0, 0);
 }
-function flipSign(input) {
-  const v = input.value.trim();
-  input.value = v.startsWith('-') ? v.slice(1) : `-${v}`;
+// Income / Expense button: expense is the default; income is stored as a negative amount
+function setType(btn, type) {
+  btn.dataset.type = type;
+  btn.textContent = type === 'income' ? 'Income' : 'Expense';
+  btn.classList.toggle('income', type === 'income');
+  btn.setAttribute('aria-pressed', String(type === 'income'));
 }
+const toggleType = btn => setType(btn, btn.dataset.type === 'income' ? 'expense' : 'income');
+const signed = (type, n) => (type === 'income' ? -Math.abs(n) : Math.abs(n));
 async function uploadLines() {
   if (!stageForm()) return;
   if (!staged.length) { toast('Nothing to upload yet.'); return; }
@@ -434,7 +443,7 @@ function rowHtml(r, showDate = false) {
   const sub = [showDate ? fmtDate(r.month) : '', r.comment].filter(Boolean).map(esc).join(' · ');
   return `<div class="row${r.pending ? ' pending' : ''}" data-key="${esc(rowKey(r))}" role="button" tabindex="0">
     <span class="r-cat">${esc(r.category)}</span>
-    <span class="r-amt${r.amount < 0 ? ' neg' : ''}">${fmtAmount(r.amount)}</span>
+    <span class="r-amt">${amtHtml(r.amount)}</span>
     ${sub ? `<span class="r-sub">${sub}</span>` : ''}
   </div>`;
 }
@@ -460,7 +469,7 @@ function renderHistory() {
     const open = firstRender ? month === cur : (openNow.has(month) || (month === cur && !$(`#history-list details[data-month="${month}"]`)));
     html += `<details class="month" data-month="${month}"${open ? ' open' : ''}>
       <summary><span class="m-name">${fmtMonthHeading(month)}</span>
-        <span class="m-meta">${items.length} · ${fmtAmount(total)}</span></summary>
+        <span class="m-meta">${items.length} · ${amtHtml(total)}</span></summary>
       <div class="rows"></div>
     </details>`;
   }
@@ -484,7 +493,7 @@ function renderFilter() {
 
   const hits = filteredRows();
   const total = hits.reduce((s, r) => s + r.amount, 0);
-  $('#f-summary').textContent = `${hits.length} item${hits.length === 1 ? '' : 's'} · total ${fmtAmount(total)}`;
+  $('#f-summary').innerHTML = `${hits.length} item${hits.length === 1 ? '' : 's'} · total ${amtHtml(total)}`;
   $('#f-list').innerHTML = hits.slice(0, FILTER_SHOW).map(r => rowHtml(r, true)).join('');
   $('#f-more').hidden = hits.length <= FILTER_SHOW;
   $('#f-more').textContent = `Showing the newest ${FILTER_SHOW} of ${hits.length}. Narrow the filters to see more — the total and Copy for Excel include all ${hits.length}.`;
@@ -505,14 +514,15 @@ function openEditor(key) {
     const o = document.createElement('option'); o.value = o.textContent = r.category; o.selected = true; sel.prepend(o);
   }
   $('#e-month').value = r.month.slice(0, 7);
-  $('#e-amount').value = r.amount.toFixed(2);
+  setType($('#e-type'), r.amount < 0 ? 'income' : 'expense');
+  $('#e-amount').value = Math.abs(r.amount).toFixed(2);
   $('#e-comment').value = r.comment || '';
   $('#e-msg').textContent = r.pending ? 'Not uploaded yet — changes stay on this phone until it uploads.' : '';
   $('#edit-dlg').showModal();
 }
 async function saveEdit(del = false) {
   const r = editing;
-  const amount = parseAmount($('#e-amount').value);
+  const amount = signed($('#e-type').dataset.type, parseAmount($('#e-amount').value));
   const month = $('#e-month').value;
   if (!del && (Number.isNaN(amount) || !/^\d{4}-\d{2}$/.test(month))) { $('#e-msg').textContent = 'Month and amount are needed.'; return; }
   if (del && !confirm(`Delete ${r.category} ${fmtAmount(r.amount)}?`)) return;
@@ -660,10 +670,10 @@ function init() {
   f.addEventListener('input', saveDraft);
   f.addEventListener('change', saveDraft);
   $('.l-month', f).addEventListener('change', () => updateCatLabels(f));
-  $('.l-sign', f).addEventListener('click', () => { flipSign($('.l-amount', f)); saveDraft(); });
+  $('.l-type', f).addEventListener('click', () => { toggleType($('.l-type', f)); saveDraft(); });
   $('.l-del', f).addEventListener('click', () => { setForm({ month: $('.l-month', f).value }); saveDraft(); });
   $('#staged').addEventListener('click', e => { const b = e.target.closest('.s-edit'); if (b) editStaged(b.closest('.staged').dataset.id); });
-  $('#e-sign').addEventListener('click', () => flipSign($('#e-amount')));
+  $('#e-type').addEventListener('click', () => toggleType($('#e-type')));
 
   $('#f-cat').addEventListener('change', renderFilter);
   $('#f-month').addEventListener('change', renderFilter);

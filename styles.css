@@ -10,7 +10,7 @@
   --warn-bg: #3a3010;
   --warn-text: #f3d98a;
   --error: #ff8a80;
-  --neg: #ff8a80;
+  --inc: #5fd49a; /* money in */
   --track: #2a3330;
   --b-ok: #4fb89c;
   --b-warn: #e0b040;
@@ -55,7 +55,7 @@ button:disabled { opacity: .5; cursor: default; }
 .small { font-size: 14px; }
 .error { color: var(--error); min-height: 1.4em; }
 .msg { min-height: 1.4em; text-align: center; }
-.neg { color: var(--neg); }
+.inc { color: var(--inc); }
 
 /* Login */
 #login { display: grid; place-items: center; padding: 16px; }
@@ -185,19 +185,20 @@ button.danger { color: var(--error); border-color: var(--error); }
 /* Entry form: month, amount, +/- and clear on one row; on phones month and amount get a row each */
 .entry-grid {
   display: grid; gap: 8px; align-items: center;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 52px 40px;
-  grid-template-areas: "month amount sign del";
+  grid-template-columns: minmax(0, 1fr) 108px minmax(0, 1fr) 40px;
+  grid-template-areas: "month type amount del";
 }
 .entry-grid > * { min-width: 0; }
 .entry-grid .l-month { grid-area: month; }
 .entry-grid .l-amount { grid-area: amount; }
-.entry-grid .l-sign { grid-area: sign; }
+.entry-grid .l-type { grid-area: type; }
 .entry-grid .l-del { grid-area: del; }
-.sign-btn { padding: 0; font-weight: 700; font-size: 18px; }
+.type-btn { padding: 0 8px; font-weight: 600; }
+.type-btn.income { color: var(--inc); border-color: var(--inc); }
 @media (max-width: 520px) {
-  .entry-grid { grid-template-columns: minmax(0, 1fr) 52px; grid-template-areas: "month del" "amount sign"; }
+  .entry-grid { grid-template-columns: 108px minmax(0, 1fr) 40px; grid-template-areas: "month month del" "type amount amount"; }
 }
-#edit-dlg .entry-grid { grid-template-columns: minmax(0, 1fr) 52px; grid-template-areas: "month month" "amount sign"; }
+#edit-dlg .entry-grid { grid-template-columns: 108px minmax(0, 1fr); grid-template-areas: "month month" "type amount"; }
 
 /* Entries waiting to upload: compact two-line cards, newest first */
 .staged-head { margin: 14px 2px 6px; font-size: 14px; font-weight: 600; color: var(--muted); }

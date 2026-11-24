@@ -49,8 +49,8 @@
         <div id="entry" class="line">
           <div class="entry-grid">
             <input type="month" class="l-month" aria-label="Month" required>
+            <button type="button" class="l-type type-btn" data-type="expense" aria-pressed="false" aria-label="Expense or income (tap to switch)">Expense</button>
             <input type="text" inputmode="decimal" class="l-amount" placeholder="Amount" aria-label="Amount">
-            <button type="button" class="l-sign sign-btn" aria-label="Switch plus / minus (minus = money in)">+/&minus;</button>
             <button type="button" class="l-del icon-btn" aria-label="Clear this entry">&times;</button>
           </div>
           <select class="l-cat" aria-label="Category"></select>
@@ -126,8 +126,8 @@
     <h2 id="e-title">Edit expense</h2>
     <div class="entry-grid">
       <input type="month" id="e-month" class="l-month" aria-label="Month">
+      <button type="button" id="e-type" class="l-type type-btn" data-type="expense" aria-pressed="false" aria-label="Expense or income (tap to switch)">Expense</button>
       <input type="text" inputmode="decimal" id="e-amount" class="l-amount" aria-label="Amount">
-      <button type="button" id="e-sign" class="l-sign sign-btn" aria-label="Switch plus / minus">+/&minus;</button>
     </div>
     <select id="e-cat" aria-label="Category"></select>
     <input type="text" id="e-comment" placeholder="Comment / detail" aria-label="Comment">

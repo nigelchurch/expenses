@@ -177,12 +177,18 @@ def check():
         page.click("#entry .l-del")
         rec("clear button empties form", page.input_value("#entry .l-amount") == "" and page.input_value("#entry .l-cat") == "Groceries (food)")
         page.select_option("#entry .l-cat", "Investment (+/-)")
-        page.fill("#entry .l-amount", "250"); page.click("#entry .l-sign")
-        rec("+/- button makes amount negative", page.input_value("#entry .l-amount") == "-250")
+        rec("type button starts on Expense", page.text_content("#entry .l-type") == "Expense")
+        page.fill("#entry .l-amount", "250"); page.click("#entry .l-type")
+        rec("type button switches to Income", page.text_content("#entry .l-type") == "Income")
         page.fill("#entry .l-comment", "Fund withdrawal")
         page.reload(); page.wait_for_selector("#app:not([hidden])")
-        rec("list and half-filled form kept after reopening", page.locator("#staged .staged").count() == 1
-            and page.input_value("#entry .l-amount") == "-250")
+        rec("list and half-filled form (Income) kept after reopening", page.locator("#staged .staged").count() == 1
+            and page.input_value("#entry .l-amount") == "250" and page.text_content("#entry .l-type") == "Income")
+        page.click("#add-line")
+        card = page.locator("#staged .staged:first-child .s-amt")
+        rec("income shown green without minus", card.text_content() == "\u0e3f250.00" and card.locator(".inc").count() == 1,
+            card.text_content())
+        page.click("#staged .staged:first-child .s-edit")
         page.screenshot(path=str(SHOTS / "02-add.png"))
         page.click("#upload")
         page.wait_for_function("document.querySelector('#add-msg').textContent.includes('uploaded')")
@@ -256,7 +262,9 @@ def check():
         page.click("#f-list .row:has-text('Fund withdrawal')")
         page.wait_for_selector("#edit-dlg[open]")
         page.screenshot(path=str(SHOTS / "08-edit-dialog.png"))
-        page.fill("#e-amount", "-300")
+        rec("edit dialog shows Income for money in", page.text_content("#e-type") == "Income"
+            and page.input_value("#e-amount") == "250.00")
+        page.fill("#e-amount", "300")
         page.select_option("#e-cat", "Planned expenses")
         page.fill("#e-comment", "Fund withdrawal (fixed)")
         page.click("#e-save")
