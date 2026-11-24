@@ -162,8 +162,9 @@ async function flushOutbox() {
       await api('expenses?on_conflict=client_id', {
         method: 'POST',
         headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
-        body: chunk.map(({ month, category, amount, comment, created_by, client_id, kitty }) =>
-          ({ month, category, amount, comment, created_by, client_id, kitty: kitty ?? null })),
+        body: chunk.map(({ month, category, amount, comment, created_by, client_id, kitty, orig_amount, currency, fx_rate }) =>
+          ({ month, category, amount, comment, created_by, client_id, kitty: kitty ?? null,
+             orig_amount: orig_amount ?? null, currency: currency ?? null, fx_rate: fx_rate ?? null })),
       });
       const done = new Set(chunk.map(r => r.client_id));
       outbox = outbox.filter(r => !done.has(r.client_id));
@@ -182,7 +183,7 @@ async function fetchAll() {
   const rows = [];
   const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
-    const res = await api('expenses?select=id,month,category,amount,comment,created_by,created_at,client_id,kitty&order=month.desc,id.desc', {
+    const res = await api('expenses?select=id,month,category,amount,comment,created_by,created_at,client_id,kitty,orig_amount,currency,fx_rate&order=month.desc,id.desc', {
       headers: { 'Range-Unit': 'items', Range: `${from}-${from + PAGE - 1}` },
     });
     const page = await res.json();
@@ -236,6 +237,7 @@ function showApp() {
   $('#login').hidden = true;
   $('#app').hidden = false;
   $('#user-name').textContent = session.name;
+  loadRates();
   // Apply this user's defaults (e.g. the Kitty tick) to an empty entry form
   const cur = readForm();
   if (isBlank(cur)) setForm({ month: cur.month });
@@ -633,6 +635,51 @@ function toast(msg) {
   else $('#history-info').textContent = msg;
 }
 
+/* ---------- Currencies (Add page only; everything is stored in THB) ---------- */
+let fx = store.get('fx', null); // { rates: { EUR: 0.0269, ... } (per 1 THB), updated, fetched }
+const lastCurrency = () => store.get('lastCurrency', 'THB');
+async function loadRates(force = false) {
+  if (!force && fx && Date.now() - fx.fetched < 6 * 3600e3) return;
+  try {
+    const res = await fetch(CFG.FX.URL);
+    const d = await res.json();
+    if (d.result !== 'success' || !d.rates) return;
+    fx = { rates: d.rates, updated: (d.time_last_update_unix || 0) * 1000, fetched: Date.now() };
+    store.set('fx', fx);
+    fillCurrencies($('.l-cur', form()));
+    updateFx();
+  } catch { /* offline: keep the saved rates */ }
+}
+// THB for 1 unit of a currency, including the bank margin
+function thbPer(cur) {
+  if (!cur || cur === 'THB') return 1;
+  const r = fx?.rates?.[cur];
+  return r ? (1 / r) * (1 + CFG.FX.MARGIN) : null;
+}
+function fillCurrencies(sel) {
+  const keep = sel.value || lastCurrency();
+  const all = Object.keys(fx?.rates || {});
+  const top = CFG.FX.TOP.filter(c => c === 'THB' || all.includes(c));
+  const rest = all.filter(c => !CFG.FX.TOP.includes(c)).sort();
+  sel.innerHTML = top.map(c => `<option>${c}</option>`).join('') +
+    (rest.length ? `<option disabled>──────</option>${rest.map(c => `<option>${c}</option>`).join('')}` : '');
+  sel.value = [...top, ...rest].includes(keep) ? keep : 'THB';
+}
+const fmtRateDate = t => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+// The "≈ ฿…" line under the amount when a foreign currency is picked
+function updateFx() {
+  const f = form(), cur = $('.l-cur', f).value, line = $('.l-fx', f);
+  line.hidden = cur === 'THB';
+  line.classList.remove('bad');
+  if (cur === 'THB') return;
+  const per = thbPer(cur);
+  if (!per) { line.classList.add('bad'); line.textContent = `No ${cur} rate yet — needs the internet once.`; return; }
+  const n = parseAmount($('.l-amount', f).value);
+  const credit = '<a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Rates By Exchange Rate API</a>';
+  line.innerHTML = `${Number.isNaN(n) ? '' : `≈ <b>${fmtAmount(Math.abs(n) * per)}</b> · `}1 ${cur} = ${fmtAmount(per)} incl. ${Math.round(CFG.FX.MARGIN * 100)}% · ${fmtRateDate(fx.updated)} · ${credit}`;
+}
+const fmtOrig = (n, cur) => `${Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
+
 /* ---------- Add page ---------- */
 // One entry form at the top. "+ New line" moves the entry into a list below it (newest first);
 // "Upload expenses" sends the list (plus whatever is still in the form).
@@ -651,9 +698,13 @@ function setForm(d = {}) {
   const f = form();
   $('.l-month', f).value = d.month || $('.l-month', f).value || currentMonthIso().slice(0, 7);
   $('.l-cat', f).value = d.category || CFG.DEFAULT_CATEGORY;
-  const amt = String(d.amount ?? '').trim();
+  const foreign = d.currency && d.currency !== 'THB' && d.orig_amount != null;
+  const amt = String(foreign ? d.orig_amount : (d.amount ?? '')).trim();
   setType($('.l-type', f), d.type || (amt.startsWith('-') ? 'income' : 'expense'));
   $('.l-amount', f).value = amt.replace(/^-/, '');
+  $('.l-cur', f).value = d.currency || lastCurrency();
+  if (!$('.l-cur', f).value) $('.l-cur', f).value = 'THB';
+  updateFx();
   $('.l-comment', f).value = d.comment ?? '';
   $('.l-kittybox', f).checked = d.kitty ?? kittyDefault();
   f.classList.remove('invalid');
@@ -666,6 +717,7 @@ function readForm() {
     category: $('.l-cat', f).value,
     type: $('.l-type', f).dataset.type,
     amount: $('.l-amount', f).value.trim(),
+    currency: $('.l-cur', f).value || 'THB',
     comment: $('.l-comment', f).value.trim(),
     kitty: $('.l-kittybox', f).checked,
   };
@@ -683,7 +735,13 @@ function stageForm() {
     toast('Month, category and amount are needed.');
     return false;
   }
-  staged.unshift({ id: uuid(), ...d, amount: String(signed(d.type, parseAmount(d.amount))) });
+  const typed = signed(d.type, parseAmount(d.amount));
+  const per = thbPer(d.currency);
+  if (!per) { form().classList.add('invalid'); toast(`No ${d.currency} rate yet — connect to the internet once, or use THB.`); return false; }
+  const entry = { id: uuid(), ...d, amount: String(Math.round(typed * per * 100) / 100) };
+  if (d.currency !== 'THB') Object.assign(entry, { orig_amount: typed, fx_rate: Math.round(per * 1e6) / 1e6 });
+  else Object.assign(entry, { currency: null });
+  staged.unshift(entry);
   setForm({ month: d.month });
   renderStaged();
   saveDraft();
@@ -697,7 +755,7 @@ function renderStaged() {
     const amt = parseAmount(d.amount);
     return `<div class="staged" data-id="${d.id}">
       <div class="s-main"><span>${esc(d.category)}</span><span class="s-amt">${amtHtml(amt)}</span></div>
-      <div class="s-sub">${fmtDate(`${d.month}-01`)}${d.comment ? ` · ${esc(d.comment)}` : ''}${d.kitty ? '<span class="s-kitty">Kitty</span>' : ''}</div>
+      <div class="s-sub">${fmtDate(`${d.month}-01`)}${d.currency ? ` · ${fmtOrig(d.orig_amount, d.currency)}` : ''}${d.comment ? ` · ${esc(d.comment)}` : ''}${d.kitty ? '<span class="s-kitty">Kitty</span>' : ''}</div>
       <button type="button" class="s-edit small-btn">Edit</button>
     </div>`;
   }).join('');
@@ -728,6 +786,7 @@ async function uploadLines() {
   const rows = staged.slice().reverse().map(d => ({
     month: `${d.month}-01`, category: d.category, amount: parseAmount(d.amount), comment: d.comment,
     created_by: session.name, client_id: d.id, kitty: d.kitty ?? kittyDefault(),
+    orig_amount: d.currency ? d.orig_amount : null, currency: d.currency || null, fx_rate: d.currency ? d.fx_rate : null,
   }));
   queue(rows);
   staged = [];
@@ -753,7 +812,8 @@ async function uploadLines() {
 /* ---------- History page ---------- */
 const rowKey = r => (r.pending ? `cid:${r.client_id}` : `id:${r.id}`);
 function rowHtml(r, showDate = false, dp = 2) {
-  const sub = [showDate ? fmtDate(r.month) : '', r.comment].filter(Boolean).map(esc).join(' · ');
+  const orig = r.currency && r.currency !== 'THB' && r.orig_amount != null ? fmtOrig(Number(r.orig_amount), r.currency) : '';
+  const sub = [showDate ? fmtDate(r.month) : '', orig, r.comment].filter(Boolean).map(esc).join(' · ');
   const note = kittyNote(r);
   return `<div class="row${r.pending ? ' pending' : ''}${note ? ' has-note' : ''}" data-key="${esc(rowKey(r))}" role="button" tabindex="0">
     <span class="r-cat">${esc(r.category)}</span>
@@ -989,6 +1049,9 @@ function init() {
   f.addEventListener('input', saveDraft);
   f.addEventListener('change', saveDraft);
   $('.l-month', f).addEventListener('change', () => updateCatLabels(f));
+  fillCurrencies($('.l-cur', f));
+  $('.l-cur', f).addEventListener('change', () => { store.set('lastCurrency', $('.l-cur', f).value); updateFx(); });
+  $('.l-amount', f).addEventListener('input', updateFx);
   $('.l-type', f).addEventListener('click', () => { toggleType($('.l-type', f)); saveDraft(); });
   $('#staged').addEventListener('click', e => { const b = e.target.closest('.s-edit'); if (b) editStaged(b.closest('.staged').dataset.id); });
   $('#e-type').addEventListener('click', () => toggleType($('#e-type')));

@@ -17,6 +17,10 @@ window.APP_CONFIG = {
   // TRANSFER_BY: who may add transfers into the kitty.
   KITTY: { OWNER: 'jop', TRANSFER_BY: ['nigel', 'jop'], LOW: 10000, START: { amount: 72966, at: '2026-11-24T08:12:52Z' } },
 
+  // Foreign currencies on the Add page: amounts are converted to THB with today's rate + MARGIN (bank's edge).
+  // TOP: shown first in the drop-down (THB always first); the rest follow alphabetically.
+  FX: { URL: 'https://open.er-api.com/v6/latest/THB', MARGIN: 0.02, TOP: ['THB', 'GBP', 'MYR', 'KES', 'EUR', 'USD'] },
+
   // Login names that may edit budgets (the database enforces this too)
   BUDGET_EDITORS: ['nigel'],
 

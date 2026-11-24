@@ -12,6 +12,9 @@ create table if not exists public.expenses (
 );
 alter table public.expenses add column if not exists updated_at timestamptz;
 alter table public.expenses add column if not exists kitty boolean; -- comes off / adds to Jop's kitty (null = jop's entries)
+alter table public.expenses add column if not exists orig_amount numeric(14,2); -- foreign-currency entries: what was typed
+alter table public.expenses add column if not exists currency    text;          --   its currency (empty = THB)
+alter table public.expenses add column if not exists fx_rate     numeric(14,6); --   THB per unit used (incl. 2% margin)
 
 create index if not exists expenses_month_idx on public.expenses (month desc);
 

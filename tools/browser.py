@@ -188,6 +188,10 @@ def check():
                                                    viewport={"width": 411, "height": 960}, device_scale_factor=2,
                                                    permissions=["clipboard-read", "clipboard-write"])
         ctx.route(f"{MOCK}/**", mock.handle)
+        fx_rates = {"THB": 1, "GBP": 0.0225, "MYR": 0.12, "KES": 3.8, "EUR": 0.027, "USD": 0.0294, "AUD": 0.044, "JPY": 4.4, "ZAR": 0.5}
+        ctx.route("https://open.er-api.com/**", lambda route: route.abort("internetdisconnected") if mock.offline else route.fulfill(
+            status=200, headers={"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"},
+            body=json.dumps({"result": "success", "base_code": "THB", "time_last_update_unix": 1795478400, "rates": fx_rates})))
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         # Collect errors AND warnings from every channel: page console, browser log, DevTools "Issues"
         page.on("console", lambda m: m.type in ("error", "warning") and errors.append(f"console {m.type}: {m.text}"))
@@ -344,6 +348,28 @@ def check():
         rec("jop's entry with Kitty unticked leaves the kitty alone", page.text_content("#kitty-pill") == pill
             and mock.rows[-1]["kitty"] is False, page.text_content("#kitty-pill"))
         rec("tick back on for jop's next entry", page.is_checked("#entry .l-kittybox"))
+
+        # Foreign currency on the Add page
+        page.wait_for_function("document.querySelectorAll('#entry .l-cur option').length > 6")
+        opts = page.eval_on_selector_all("#entry .l-cur option", "os => os.map(o => o.value)")
+        rec("currency list: THB first, then GBP MYR KES EUR USD, then A-Z", opts[:6] == ["THB", "GBP", "MYR", "KES", "EUR", "USD"]
+            and opts[7:] == sorted(opts[7:]) and page.input_value("#entry .l-cur") == "THB", str(opts))
+        rec("THB shows no conversion line", not page.is_visible("#entry .l-fx"))
+        page.select_option("#entry .l-cur", "EUR"); page.fill("#entry .l-amount", "45"); page.fill("#entry .l-comment", "Paris lunch")
+        exp_thb = round(45 / 0.027 * 1.02, 2)
+        fxline = page.text_content("#entry .l-fx")
+        rec("live THB equivalent incl. 2%", f"\u0e3f{exp_thb:,.2f}" in fxline, fxline)
+        page.screenshot(path=str(SHOTS / "17-currency.png"))
+        page.click("#upload")
+        page.wait_for_function("document.querySelector('#add-msg').textContent.includes('uploaded')")
+        last = mock.rows[-1]
+        rec("saved in THB with original amount, currency and rate", last["amount"] == exp_thb and last["orig_amount"] == 45
+            and last["currency"] == "EUR" and abs(last["fx_rate"] - 1 / 0.027 * 1.02) < 1e-4, str({k: last[k] for k in ("amount", "orig_amount", "currency", "fx_rate")}))
+        rec("currency stays on EUR for the next line", page.input_value("#entry .l-cur") == "EUR")
+        page.click(".tabs button[data-page=history]")
+        rec("history shows the original amount", "45.00 EUR" in page.text_content("#history-list .row:has-text('Paris lunch')"))
+        page.click(".tabs button[data-page=add]")
+        page.select_option("#entry .l-cur", "THB")
         page.click(".tabs button[data-page=history]")
         note_row = page.locator("#history-list .row:has-text('paid by card, not kitty') .r-note")
         rec("history labels jop's entry 'not from kitty'", note_row.count() == 1 and note_row.text_content() == "not from kitty")
@@ -592,6 +618,10 @@ def demo():
         ctx = p.chromium.launch_persistent_context(prof, channel="msedge", headless=False, no_viewport=True,
                                                    args=["--window-size=460,980"])
         ctx.route(f"{MOCK}/**", mock.handle)
+        fx_rates = {"THB": 1, "GBP": 0.0225, "MYR": 0.12, "KES": 3.8, "EUR": 0.027, "USD": 0.0294, "AUD": 0.044, "JPY": 4.4, "ZAR": 0.5}
+        ctx.route("https://open.er-api.com/**", lambda route: route.abort("internetdisconnected") if mock.offline else route.fulfill(
+            status=200, headers={"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"},
+            body=json.dumps({"result": "success", "base_code": "THB", "time_last_update_unix": 1795478400, "rates": fx_rates})))
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(f"http://127.0.0.1:{PORT}/")
         print(f"Demo running with {len(mock.rows)} expenses (nothing is saved anywhere real).")

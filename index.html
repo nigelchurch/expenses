@@ -55,8 +55,10 @@
             <input type="month" class="l-month" name="month" aria-label="Month" required>
             <button type="button" class="l-type type-btn" data-type="expense" aria-pressed="false" aria-label="Expense or income (tap to switch)">Expense</button>
             <input type="text" inputmode="decimal" class="l-amount" name="amount" placeholder="Amount" aria-label="Amount">
+            <select class="l-cur" name="currency" aria-label="Currency"><option>THB</option></select>
             <label class="l-kitty kitty-tick" title="Comes off / adds to Jop's kitty"><input type="checkbox" class="l-kittybox" name="kitty"><span>Kitty</span></label>
           </div>
+          <p class="l-fx" hidden></p>
           <select class="l-cat" name="category" aria-label="Category"></select>
           <input type="text" class="l-comment" name="comment" placeholder="Comment / detail" aria-label="Comment">
         </div>
