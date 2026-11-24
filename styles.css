@@ -106,6 +106,7 @@ button:disabled { opacity: .5; cursor: default; }
 }
 .menu button { text-align: left; border: none; }
 .menu-user { margin: 4px 8px; font-size: 14px; color: var(--muted); }
+.menu-ver { margin: 2px 8px 4px; font-size: 12px; color: var(--muted); }
 .banner { background: var(--warn-bg); color: var(--warn-text); padding: 8px 16px; font-size: 14px; }
 
 main { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 12px 16px 96px;

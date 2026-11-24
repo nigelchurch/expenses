@@ -442,6 +442,12 @@ def check():
         cdp = ctx.new_cdp_session(page)
         inst = cdp.send("Page.getInstallabilityErrors")["installabilityErrors"]
         rec("installable", not inst, str(inst))
+        swv = re.search(r"VERSION = '([^']+)'", (ROOT / "sw.js").read_text(encoding="utf-8")).group(1)
+        page.click("#menu-btn")
+        page.wait_for_function(f"document.querySelector('#app-ver').textContent === '{swv}'", timeout=5000)
+        rec("menu shows the installed version", page.text_content("#app-ver") == swv, page.text_content("#app-ver"))
+        rec("menu has Update app", page.is_visible("#menu button[data-action=update]"))
+        page.click("#menu-btn")
 
         # Offline: reload, add, then reconnect
         page.reload(); page.wait_for_selector("#app:not([hidden])")

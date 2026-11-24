@@ -420,6 +420,25 @@ for (const id of ['edit-dlg', 'kitty-dlg']) {
   new MutationObserver(() => lockZoom(dlg.open)).observe(dlg, { attributes: true, attributeFilter: ['open'] });
 }
 
+// The version actually installed on this phone = the name of its offline copy (expenses-vNN)
+async function showVersion() {
+  let v = 'dev (no offline copy)';
+  try {
+    const k = (await caches.keys()).filter(n => n.startsWith('expenses-')).sort().pop();
+    if (k) v = k.replace('expenses-', '');
+  } catch { /* ignore */ }
+  $('#app-ver').textContent = v;
+}
+// Fetch the newest version now and reload (instead of closing / reopening the app)
+async function updateApp() {
+  $('#app-ver').textContent = 'checking…';
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) await reg.update();
+  } catch { /* offline */ }
+  setTimeout(() => location.reload(), 1500);
+}
+
 const isBudgetEditor = () => !!session && (CFG.BUDGET_EDITORS || []).includes(session.name.trim().toLowerCase());
 
 // Actual spend for one category in the n completed months before this one (newest first)
@@ -1053,13 +1072,14 @@ function init() {
   });
 
   $$('.tabs button').forEach(b => b.addEventListener('click', () => showPage(b.dataset.page)));
-  $('#menu-btn').addEventListener('click', e => { e.stopPropagation(); $('#menu').hidden = !$('#menu').hidden; });
+  $('#menu-btn').addEventListener('click', e => { e.stopPropagation(); $('#menu').hidden = !$('#menu').hidden; showVersion(); });
   document.addEventListener('click', e => { if (!$('#menu').contains(e.target)) $('#menu').hidden = true; });
   $('#menu').addEventListener('click', e => {
     const a = e.target.closest('button')?.dataset.action;
     if (a === 'import') showPage('import');
     if (a === 'budgets') { openBudgetCat = null; showPage('budgets'); }
     if (a === 'transfer') { $('#menu').hidden = true; openTransfer(); }
+    if (a === 'update') updateApp();
     if (a === 'refresh') { $('#menu').hidden = true; sync({ quiet: false }); }
     if (a === 'logout') {
       if (outbox.length && !confirm(`${outbox.length} expenses have not uploaded yet. They stay on this phone and upload after the next sign-in. Sign out?`)) return;
