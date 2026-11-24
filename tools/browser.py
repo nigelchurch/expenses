@@ -208,6 +208,7 @@ def check():
         page.goto(base)
         page.wait_for_selector("#login:not([hidden])")
         page.screenshot(path=str(SHOTS / "01-login.png"))
+        rec("no auto-zoom on the sign-in screen", "maximum-scale=1" in page.get_attribute('meta[name="viewport"]', "content"))
 
         page.fill("#login-name", "jop"); page.fill("#login-pass", "wrong"); page.click("#login-form button")
         page.wait_for_function("document.querySelector('#login-error').textContent.length > 0")
@@ -216,6 +217,8 @@ def check():
         page.fill("#login-pass", "secret"); page.click("#login-form button")
         page.wait_for_selector("#app:not([hidden])")
         rec("login with name + password", True)
+        page.wait_for_timeout(600)
+        rec("zoom reset then allowed again after sign-in", "maximum-scale" not in page.get_attribute('meta[name="viewport"]', "content"))
 
         # Add: one entry form; "+ New line" moves it into a list below; upload sends list + form
         n0 = len(mock.rows)

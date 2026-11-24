@@ -226,6 +226,7 @@ async function sync({ quiet = true } = {}) {
 let currentPage = 'add';
 
 function showLogin() {
+  lockZoom(true); // iPhone: no auto-zoom on the sign-in boxes
   $('#app').hidden = true;
   $('#login').hidden = false;
   $('#login-pass').value = '';
@@ -234,6 +235,9 @@ function showLogin() {
   }
 }
 function showApp() {
+  // iPhone: snap back to normal size after signing in (setting maximum-scale resets any zoom), then allow pinch again
+  lockZoom(true);
+  setTimeout(() => lockZoom(false), 400);
   $('#login').hidden = true;
   $('#app').hidden = false;
   $('#user-name').textContent = session.name;
