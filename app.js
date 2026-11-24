@@ -6,7 +6,7 @@ const BASE = CFG.SUPABASE_URL.replace(/\/+$/, '');
 const KEY = CFG.SUPABASE_ANON_KEY;
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const PAGE_TITLES = { add: 'Add expenses', history: 'History', filter: 'Filter', budget: 'Budget', budgets: 'Edit budgets', import: 'Import history' };
+const PAGE_TITLES = { add: 'Add expenses', history: 'History', filter: 'Filter', budget: 'Budget', budgets: 'Edit budgets', kitty: "Jop's kitty", import: 'Import history' };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -162,8 +162,8 @@ async function flushOutbox() {
       await api('expenses?on_conflict=client_id', {
         method: 'POST',
         headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' },
-        body: chunk.map(({ month, category, amount, comment, created_by, client_id }) =>
-          ({ month, category, amount, comment, created_by, client_id })),
+        body: chunk.map(({ month, category, amount, comment, created_by, client_id, kitty }) =>
+          ({ month, category, amount, comment, created_by, client_id, kitty: kitty ?? null })),
       });
       const done = new Set(chunk.map(r => r.client_id));
       outbox = outbox.filter(r => !done.has(r.client_id));
@@ -182,7 +182,7 @@ async function fetchAll() {
   const rows = [];
   const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
-    const res = await api('expenses?select=id,month,category,amount,comment,created_by,created_at,client_id&order=month.desc,id.desc', {
+    const res = await api('expenses?select=id,month,category,amount,comment,created_by,created_at,client_id,kitty&order=month.desc,id.desc', {
       headers: { 'Range-Unit': 'items', Range: `${from}-${from + PAGE - 1}` },
     });
     const page = await res.json();
@@ -209,6 +209,7 @@ async function sync({ quiet = true } = {}) {
     if (outbox.length) await flushOutbox();
     await fetchAll();
     await fetchBudgets();
+    await fetchKitty();
     setNet(true);
   } catch (e) {
     if (e instanceof OfflineError) setNet(false);
@@ -235,7 +236,13 @@ function showApp() {
   $('#login').hidden = true;
   $('#app').hidden = false;
   $('#user-name').textContent = session.name;
+  // Apply this user's defaults (e.g. the Kitty tick) to an empty entry form
+  const cur = readForm();
+  if (isBlank(cur)) setForm({ month: cur.month });
   $('#menu [data-action=budgets]').hidden = !isBudgetEditor();
+  const canTransfer = (CFG.KITTY.TRANSFER_BY || []).includes(session.name.trim().toLowerCase());
+  $('#menu [data-action=transfer]').hidden = !canTransfer;
+  $('#k-transfer').hidden = !canTransfer;
   updateBanner();
   updateNet();
   showPage(currentPage);
@@ -243,19 +250,20 @@ function showApp() {
 }
 function showPage(page) {
   currentPage = page;
-  for (const p of ['add', 'history', 'filter', 'budget', 'budgets', 'import']) $(`#page-${p}`).hidden = p !== page;
+  for (const p of ['add', 'history', 'filter', 'budget', 'budgets', 'kitty', 'import']) $(`#page-${p}`).hidden = p !== page;
   $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   $('#page-title').textContent = PAGE_TITLES[page];
   $('#menu').hidden = true;
   renderCurrent();
   window.scrollTo(0, 0);
 }
-function renderCurrent() { renderPage(currentPage); }
+function renderCurrent() { renderPage(currentPage); updateKittyPill(); }
 function renderPage(p) {
   if (p === 'history') renderHistory();
   if (p === 'filter') renderFilter();
   if (p === 'budget') renderBudget();
   if (p === 'budgets') renderBudgetEditor();
+  if (p === 'kitty') renderKitty();
   if (p === 'add') updateCatLabels(form());
 }
 
@@ -496,7 +504,113 @@ function renderBudget() {
     ? `<h3>No budget set</h3><div id="f-list">${others.map(([c, v]) => rowHtml({ category: c, amount: v, comment: '' }).replace('role="button" tabindex="0"', '')).join('')}</div>`
     : '';
 }
+/* ---------- Jop's kitty ---------- */
+// Balance = latest opening + nigel's transfers since then - everything the owner (jop) has entered since then
+// (spending takes it down, income puts it up). Rows from the database table "kitty".
+let kittyRows = store.get('kitty', []);
+async function fetchKitty() {
+  try {
+    const res = await api('kitty?select=kind,amount,note,created_by,created_at&order=created_at.asc');
+    kittyRows = await res.json();
+    store.set('kitty', kittyRows);
+  } catch (e) {
+    if (e instanceof OfflineError || e instanceof AuthError) throw e;
+    // table not set up yet: use the starting balance from config.js
+  }
+}
+// Does this entry come off / add to the kitty? Its own tick; older entries (no tick saved): if jop entered it.
+const inKitty = r => r.kitty ?? ((r.created_by || '').trim().toLowerCase() === CFG.KITTY.OWNER);
+// "not from kitty" on any entry saved with the Kitty tick off (whoever entered it); older entries have no tick saved
+const kittyNote = r => (r.kitty === false ? '<span class="r-note">not from kitty</span>' : '');
+const kittyDefault = () => !!session && session.name.trim().toLowerCase() === CFG.KITTY.OWNER;
+function kittyStatement() {
+  const K = CFG.KITTY;
+  const openings = kittyRows.filter(r => r.kind === 'opening');
+  const open = openings.length
+    ? { at: openings[openings.length - 1].created_at, amount: Number(openings[openings.length - 1].amount) }
+    : { at: K.START.at, amount: K.START.amount };
+  const t0 = Date.parse(open.at);
+  const now = new Date().toISOString();
+  // Statement lines: every transfer and every bit of income on its own; spending as one line per month
+  const items = [];
+  for (const r of kittyRows) {
+    if (r.kind === 'transfer' && Date.parse(r.created_at) >= t0) {
+      items.push({ at: r.created_at, what: `Transfer${r.created_by ? ` from ${r.created_by}` : ''}${r.note ? ` · ${r.note}` : ''}`, change: Number(r.amount) });
+    }
+  }
+  const spendByMonth = {};
+  for (const r of allRows()) {
+    if (!inKitty(r)) continue;
+    const at = r.created_at || now; // not uploaded yet = now
+    if (Date.parse(at) < t0) continue;
+    if (r.amount < 0) {
+      items.push({ at, what: `${r.category}${r.comment ? ` · ${r.comment}` : ''}`, change: -r.amount, pending: !!r.pending });
+    } else {
+      const g = (spendByMonth[r.month] ||= { at, month: r.month, total: 0, n: 0, pending: false });
+      g.total += r.amount; g.n += 1; g.pending ||= !!r.pending;
+      if (at > g.at) g.at = at; // the month's line sits at its latest spend
+    }
+  }
+  for (const g of Object.values(spendByMonth)) {
+    items.push({ at: g.at, what: `Spending · ${fmtMonthHeading(g.month)} (${g.n})`, change: -g.total, pending: g.pending, spend: true });
+  }
+  items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  let bal = open.amount;
+  for (const it of items) { bal += it.change; it.balance = bal; }
+  return { balance: bal, open, items: items.reverse() };
+}
+function updateKittyPill() {
+  const pill = $('#kitty-pill');
+  if (!pill || !session) return;
+  const { balance } = kittyStatement();
+  pill.textContent = `${balance < 0 ? '-' : ''}${fmtAmount(balance, 0)}`;
+  pill.classList.toggle('low', balance >= 0 && balance < CFG.KITTY.LOW);
+  pill.classList.toggle('neg', balance < 0);
+}
+const fmtWhen = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+function renderKitty() {
+  const st = kittyStatement();
+  $('#k-bal').textContent = `${st.balance < 0 ? '-' : ''}${fmtAmount(st.balance, 0)}`;
+  $('#k-bal').className = `k-bal${st.balance < 0 ? ' neg' : st.balance < CFG.KITTY.LOW ? ' low' : ''}`;
+  $('#k-sub').textContent = st.balance < CFG.KITTY.LOW ? `Low — below ${fmtAmount(CFG.KITTY.LOW, 0)}` : '';
+  $('#k-list').innerHTML = st.items.map(it => `<div class="k-row${it.pending ? ' pending' : ''}">
+      <span class="k-date">${fmtWhen(it.at)}</span>
+      <span class="k-what">${esc(it.what)}</span>
+      <span class="k-amt${it.change > 0 ? ' inc' : ''}">${it.change > 0 ? '+' : '−'}${fmtAmount(it.change, 0)}</span>
+      <span class="k-run">${fmtAmount(it.balance, 0)}</span>
+    </div>`).join('') +
+    `<div class="k-row k-open"><span class="k-date">${fmtWhen(st.open.at)}</span><span class="k-what">Starting balance</span>
+      <span class="k-amt"></span><span class="k-run">${fmtAmount(st.open.amount, 0)}</span></div>`;
+}
+function openTransfer() {
+  $('#t-amount').value = '';
+  $('#t-note').value = '';
+  $('#t-msg').textContent = '';
+  $('#kitty-dlg').showModal();
+}
+async function saveTransfer() {
+  const amount = parseAmount($('#t-amount').value);
+  if (Number.isNaN(amount) || amount <= 0) { $('#t-msg').textContent = 'Enter the amount transferred.'; return; }
+  $('#t-save').disabled = true;
+  try {
+    await api('kitty', { method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: [{ kind: 'transfer', amount, note: $('#t-note').value.trim(), created_by: session.name }] });
+    setNet(true);
+    await fetchKitty();
+    $('#kitty-dlg').close();
+    renderCurrent();
+    toast(`${fmtAmount(amount, 0)} transferred to the kitty ✓`);
+  } catch (e) {
+    if (e instanceof AuthError) { $('#kitty-dlg').close(); logout(); return; }
+    $('#t-msg').textContent = e instanceof OfflineError ? 'No connection — transfers need the internet.'
+      : /row-level|permission|policy/i.test(e.message) ? 'Only nigel can add transfers.' : e.message;
+  } finally {
+    $('#t-save').disabled = false;
+  }
+}
+
 function updateBanner() {
+  updateKittyPill();
   const b = $('#outbox-banner');
   b.hidden = !outbox.length;
   b.textContent = `${outbox.length} expense${outbox.length === 1 ? '' : 's'} saved on this phone, waiting to upload.`;
@@ -505,7 +619,11 @@ function updateBanner() {
 let netOk = navigator.onLine;
 function setNet(ok) { netOk = ok; updateNet(); }
 function updateNet() {
-  $('#net-status').textContent = netOk && navigator.onLine ? 'Online' : 'Offline';
+  const on = netOk && navigator.onLine;
+  const el = $('#net-status');
+  el.textContent = on ? 'Online' : 'Offline'; // shown as a green / grey dot
+  el.title = el.textContent;
+  el.classList.toggle('off', !on);
 }
 let toastTimer;
 function toast(msg) {
@@ -537,6 +655,7 @@ function setForm(d = {}) {
   setType($('.l-type', f), d.type || (amt.startsWith('-') ? 'income' : 'expense'));
   $('.l-amount', f).value = amt.replace(/^-/, '');
   $('.l-comment', f).value = d.comment ?? '';
+  $('.l-kittybox', f).checked = d.kitty ?? kittyDefault();
   f.classList.remove('invalid');
   updateCatLabels(f);
 }
@@ -548,6 +667,7 @@ function readForm() {
     type: $('.l-type', f).dataset.type,
     amount: $('.l-amount', f).value.trim(),
     comment: $('.l-comment', f).value.trim(),
+    kitty: $('.l-kittybox', f).checked,
   };
 }
 const isBlank = d => !d.amount && !d.comment; // category is always pre-filled, so it doesn't count
@@ -577,7 +697,7 @@ function renderStaged() {
     const amt = parseAmount(d.amount);
     return `<div class="staged" data-id="${d.id}">
       <div class="s-main"><span>${esc(d.category)}</span><span class="s-amt">${amtHtml(amt)}</span></div>
-      <div class="s-sub">${fmtDate(`${d.month}-01`)}${d.comment ? ` · ${esc(d.comment)}` : ''}</div>
+      <div class="s-sub">${fmtDate(`${d.month}-01`)}${d.comment ? ` · ${esc(d.comment)}` : ''}${d.kitty ? '<span class="s-kitty">Kitty</span>' : ''}</div>
       <button type="button" class="s-edit small-btn">Edit</button>
     </div>`;
   }).join('');
@@ -607,7 +727,7 @@ async function uploadLines() {
   if (!staged.length) { toast('Nothing to upload yet.'); return; }
   const rows = staged.slice().reverse().map(d => ({
     month: `${d.month}-01`, category: d.category, amount: parseAmount(d.amount), comment: d.comment,
-    created_by: session.name, client_id: d.id,
+    created_by: session.name, client_id: d.id, kitty: d.kitty ?? kittyDefault(),
   }));
   queue(rows);
   staged = [];
@@ -634,10 +754,11 @@ async function uploadLines() {
 const rowKey = r => (r.pending ? `cid:${r.client_id}` : `id:${r.id}`);
 function rowHtml(r, showDate = false, dp = 2) {
   const sub = [showDate ? fmtDate(r.month) : '', r.comment].filter(Boolean).map(esc).join(' · ');
-  return `<div class="row${r.pending ? ' pending' : ''}" data-key="${esc(rowKey(r))}" role="button" tabindex="0">
+  const note = kittyNote(r);
+  return `<div class="row${r.pending ? ' pending' : ''}${note ? ' has-note' : ''}" data-key="${esc(rowKey(r))}" role="button" tabindex="0">
     <span class="r-cat">${esc(r.category)}</span>
     <span class="r-amt">${amtHtml(r.amount, dp)}</span>
-    ${sub ? `<span class="r-sub">${sub}</span>` : ''}
+    ${sub ? `<span class="r-sub">${sub}</span>` : ''}${note}
   </div>`;
 }
 // Month rows are only built when a month is opened (thousands of rows otherwise)
@@ -709,6 +830,7 @@ function openEditor(key) {
   }
   $('#e-month').value = r.month.slice(0, 7);
   setType($('#e-type'), r.amount < 0 ? 'income' : 'expense');
+  $('#e-kitty').checked = inKitty(r);
   $('#e-amount').value = Math.abs(r.amount).toFixed(2);
   $('#e-comment').value = r.comment || '';
   $('#e-msg').textContent = r.pending ? 'Not uploaded yet — changes stay on this phone until it uploads.' : '';
@@ -720,7 +842,8 @@ async function saveEdit(del = false) {
   const month = $('#e-month').value;
   if (!del && (Number.isNaN(amount) || !/^\d{4}-\d{2}$/.test(month))) { $('#e-msg').textContent = 'Month and amount are needed.'; return; }
   if (del && !confirm(`Delete ${r.category} ${fmtAmount(r.amount)}?`)) return;
-  const fields = { month: `${month}-01`, category: $('#e-cat').value, amount, comment: $('#e-comment').value.trim() };
+  const fields = { month: `${month}-01`, category: $('#e-cat').value, amount, comment: $('#e-comment').value.trim(),
+    kitty: $('#e-kitty').checked };
 
   if (r.pending) {
     outbox = del ? outbox.filter(x => x.client_id !== r.client_id)
@@ -850,6 +973,7 @@ function init() {
     const a = e.target.closest('button')?.dataset.action;
     if (a === 'import') showPage('import');
     if (a === 'budgets') { openBudgetCat = null; showPage('budgets'); }
+    if (a === 'transfer') { $('#menu').hidden = true; openTransfer(); }
     if (a === 'refresh') { $('#menu').hidden = true; sync({ quiet: false }); }
     if (a === 'logout') {
       if (outbox.length && !confirm(`${outbox.length} expenses have not uploaded yet. They stay on this phone and upload after the next sign-in. Sign out?`)) return;
@@ -866,7 +990,6 @@ function init() {
   f.addEventListener('change', saveDraft);
   $('.l-month', f).addEventListener('change', () => updateCatLabels(f));
   $('.l-type', f).addEventListener('click', () => { toggleType($('.l-type', f)); saveDraft(); });
-  $('.l-del', f).addEventListener('click', () => { setForm({ month: $('.l-month', f).value }); saveDraft(); });
   $('#staged').addEventListener('click', e => { const b = e.target.closest('.s-edit'); if (b) editStaged(b.closest('.staged').dataset.id); });
   $('#e-type').addEventListener('click', () => toggleType($('#e-type')));
 
@@ -877,6 +1000,10 @@ function init() {
   $('#b-next').addEventListener('click', () => { budgetMonth = shiftMonth(budgetMonth, 1); renderBudget(); });
 
   initSwipe();
+  $('#kitty-pill').addEventListener('click', () => showPage('kitty'));
+  $('#k-transfer').addEventListener('click', openTransfer);
+  $('#t-save').addEventListener('click', saveTransfer);
+  $('#t-cancel').addEventListener('click', () => $('#kitty-dlg').close());
   $('#be-list').addEventListener('click', e => {
     const edit = e.target.closest('.be-edit');
     if (edit) { openBudgetCat = edit.closest('.be-row').dataset.cat; renderBudgetEditor(); window.scrollTo(0, 0); }

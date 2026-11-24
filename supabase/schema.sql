@@ -11,6 +11,7 @@ create table if not exists public.expenses (
   client_id   uuid unique  -- set by the app so a retried upload never creates duplicates
 );
 alter table public.expenses add column if not exists updated_at timestamptz;
+alter table public.expenses add column if not exists kitty boolean; -- comes off / adds to Jop's kitty (null = jop's entries)
 
 create index if not exists expenses_month_idx on public.expenses (month desc);
 

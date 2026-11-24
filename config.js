@@ -12,6 +12,11 @@ window.APP_CONFIG = {
   // Shown in front of amounts, e.g. '£' or '€'. Leave '' for none.
   CURRENCY: '฿',
 
+  // Jop's kitty (the cash float she holds): everything OWNER enters comes off / adds to it;
+  // nigel's transfers add to it. START is only used until the database "kitty" table exists.
+  // TRANSFER_BY: who may add transfers into the kitty.
+  KITTY: { OWNER: 'jop', TRANSFER_BY: ['nigel', 'jop'], LOW: 10000, START: { amount: 72966, at: '2026-11-24T08:12:52Z' } },
+
   // Login names that may edit budgets (the database enforces this too)
   BUDGET_EDITORS: ['nigel'],
 

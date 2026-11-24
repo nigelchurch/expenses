@@ -32,11 +32,13 @@
   <section id="app" class="screen" hidden>
     <header class="topbar">
       <h1 id="page-title">Add expenses</h1>
-      <span id="net-status" class="pill"></span>
+      <button id="kitty-pill" type="button" class="pill kitty-pill" title="Jop's kitty" aria-label="Jop's kitty balance"></button>
+      <span id="net-status" class="net-dot" role="status"></span>
       <button id="menu-btn" class="icon-btn" aria-label="Menu">&#8942;</button>
     </header>
     <div id="menu" class="menu" hidden>
       <p class="menu-user">Signed in as <b id="user-name"></b></p>
+      <button data-action="transfer" hidden>Transfer to kitty</button>
       <button data-action="budgets" hidden>Edit budgets</button>
       <button data-action="import">Import history (paste from Excel)</button>
       <button data-action="refresh">Refresh from server</button>
@@ -53,7 +55,7 @@
             <input type="month" class="l-month" name="month" aria-label="Month" required>
             <button type="button" class="l-type type-btn" data-type="expense" aria-pressed="false" aria-label="Expense or income (tap to switch)">Expense</button>
             <input type="text" inputmode="decimal" class="l-amount" name="amount" placeholder="Amount" aria-label="Amount">
-            <button type="button" class="l-del icon-btn" aria-label="Clear this entry">&times;</button>
+            <label class="l-kitty kitty-tick" title="Comes off / adds to Jop's kitty"><input type="checkbox" class="l-kittybox" name="kitty"><span>Kitty</span></label>
           </div>
           <select class="l-cat" name="category" aria-label="Category"></select>
           <input type="text" class="l-comment" name="comment" placeholder="Comment / detail" aria-label="Comment">
@@ -109,6 +111,17 @@
         <div id="be-list"></div>
       </div>
 
+      <!-- Jop's kitty -->
+      <div id="page-kitty" class="page" hidden>
+        <div class="k-head">
+          <div id="k-bal" class="k-bal"></div>
+          <div id="k-sub" class="k-sub"></div>
+          <button id="k-transfer" type="button" class="primary" hidden>Transfer to kitty</button>
+        </div>
+        <h3 class="k-title">Statement</h3>
+        <div id="k-list" class="k-list"></div>
+      </div>
+
       <!-- Import -->
       <div id="page-import" class="page" hidden>
         <p class="small">Paste rows copied from Excel with the columns
@@ -130,12 +143,24 @@
     </nav>
   </section>
 
+  <dialog id="kitty-dlg" aria-labelledby="t-title">
+    <h2 id="t-title">Transfer to kitty</h2>
+    <input type="text" inputmode="decimal" id="t-amount" name="transfer-amount" placeholder="Amount" aria-label="Amount">
+    <input type="text" id="t-note" name="transfer-note" placeholder="Note (optional)" aria-label="Note">
+    <p id="t-msg" class="small error" role="alert"></p>
+    <div class="actions">
+      <button type="button" id="t-cancel" autofocus>Cancel</button>
+      <button type="button" id="t-save" class="primary">Add transfer</button>
+    </div>
+  </dialog>
+
   <dialog id="edit-dlg" aria-labelledby="e-title">
     <h2 id="e-title">Edit expense</h2>
     <div class="entry-grid">
       <input type="month" id="e-month" class="l-month" aria-label="Month">
       <button type="button" id="e-type" class="l-type type-btn" data-type="expense" aria-pressed="false" aria-label="Expense or income (tap to switch)">Expense</button>
       <input type="text" inputmode="decimal" id="e-amount" class="l-amount" aria-label="Amount">
+      <label class="l-kitty kitty-tick" title="Comes off / adds to Jop's kitty"><input type="checkbox" id="e-kitty" name="kitty"><span>Kitty</span></label>
     </div>
     <select id="e-cat" aria-label="Category"></select>
     <input type="text" id="e-comment" placeholder="Comment / detail" aria-label="Comment">

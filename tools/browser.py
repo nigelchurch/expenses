@@ -6,7 +6,7 @@
 The --check mode serves a test config.js pointing at a fake Supabase that Playwright answers,
 so it needs no real project and touches no real data.
 """
-import argparse, http.server, json, re, socketserver, sys, tempfile, threading, time, uuid
+import argparse, datetime, http.server, json, re, socketserver, sys, tempfile, threading, time, uuid
 from functools import partial
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -56,6 +56,8 @@ def serve(test_mode):
 class MockSupabase:
     def __init__(self):
         self.rows, self.offline, self.next_id = [], False, 1
+        self.kitty = [{"kind": "opening", "amount": 72966, "note": "Starting float", "created_by": "setup",
+                       "created_at": "2026-11-01T00:00:00+00:00"}]
         cfg = (ROOT / "config.js").read_text(encoding="utf-8").split("BUDGETS: {")[1].split("}")[0]
         self.budgets = [{"category": c, "amount": float(v), "from_month": "2020-02-01"}
                         for c, v in re.findall(r"'([^']+)':\s*([\d.]+)", cfg)]
@@ -79,7 +81,7 @@ class MockSupabase:
     def add(self, r):
         if any(x["client_id"] == r["client_id"] for x in self.rows if r.get("client_id")):
             return
-        self.rows.append({**r, "id": self.next_id, "created_at": "2026-11-22T10:00:00Z"})
+        self.rows.append({"created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(), **r, "id": self.next_id})
         self.next_id += 1
 
     def handle(self, route):
@@ -100,7 +102,7 @@ class MockSupabase:
         if u.path == "/auth/v1/token":
             body = json.loads(req.post_data or "{}")
             if q.get("grant_type") == ["password"]:
-                if body.get("email") == "jo@expenses.local" and body.get("password") == "secret":
+                if body.get("email") == "jop@expenses.local" and body.get("password") == "secret":
                     return ok({"access_token": "tok", "refresh_token": "ref", "expires_in": 3600})
                 if body.get("email") == "nigel@expenses.local" and body.get("password") == "secret":
                     return ok({"access_token": "tokN", "refresh_token": "refN", "expires_in": 3600})
@@ -126,7 +128,20 @@ class MockSupabase:
                 return ok(None, 204)
             rows = sorted(self.rows, key=lambda r: (r["month"], r["id"]), reverse=True)
             a, b = map(int, req.headers.get("range", f"0-{len(rows)}").split("-"))
-            return ok(rows[a:b + 1])
+            cols = q.get("select", ["*"])[0].split(",")  # like the real database: only the columns asked for
+            return ok([r if cols == ["*"] else {c: r.get(c) for c in cols} for r in rows[a:b + 1]])
+        if u.path == "/rest/v1/kitty":
+            authz = req.headers.get("authorization", "")
+            if authz not in ("Bearer tok", "Bearer tok2", "Bearer tokN"):
+                return ok({"message": "JWT invalid"}, 401)
+            if req.method == "POST":
+                rows_in = json.loads(req.post_data)
+                if authz != "Bearer tokN" and any(r.get("kind") != "transfer" for r in rows_in):
+                    return ok({"message": "new row violates row-level security policy"}, 403)
+                for r in rows_in:
+                    self.kitty.append({**r, "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+                return ok(None, 201)
+            return ok(sorted(self.kitty, key=lambda k: k["created_at"]))
         if u.path == "/rest/v1/budgets":
             authz = req.headers.get("authorization", "")
             if authz not in ("Bearer tok", "Bearer tok2", "Bearer tokN"):
@@ -189,7 +204,7 @@ def check():
         page.wait_for_selector("#login:not([hidden])")
         page.screenshot(path=str(SHOTS / "01-login.png"))
 
-        page.fill("#login-name", "Jo"); page.fill("#login-pass", "wrong"); page.click("#login-form button")
+        page.fill("#login-name", "jop"); page.fill("#login-pass", "wrong"); page.click("#login-form button")
         page.wait_for_function("document.querySelector('#login-error').textContent.length > 0")
         rec("wrong password rejected", "Wrong name or password" in page.text_content("#login-error"))
 
@@ -213,8 +228,8 @@ def check():
         page.click("#staged .staged:first-child .s-edit")
         rec("Edit puts entry back in form", page.input_value("#entry .l-comment") == "beer edit me"
             and page.locator("#staged .staged").count() == 1)
-        page.click("#entry .l-del")
-        rec("clear button empties form", page.input_value("#entry .l-amount") == "" and page.input_value("#entry .l-cat") == "Groceries (food)")
+        rec("kitty ticked by default for jop", page.is_checked("#entry .l-kittybox"))
+        page.fill("#entry .l-amount", ""); page.fill("#entry .l-comment", ""); page.select_option("#entry .l-cat", "Groceries (food)")
         page.select_option("#entry .l-cat", "Investment (+/-)")
         rec("type button starts on Expense", page.text_content("#entry .l-type") == "Expense")
         page.fill("#entry .l-amount", "250"); page.click("#entry .l-type")
@@ -241,7 +256,7 @@ def check():
         page.fill("#entry .l-comment", "no amount given")
         page.click("#add-line")
         rec("entry without amount is flagged", page.locator("#entry.invalid").count() == 1)
-        page.click("#entry .l-del")
+        page.fill("#entry .l-comment", "")
         page.select_option("#entry .l-cat", "Beer")  # blank form, category changed
         page.reload(); page.wait_for_selector("#app:not([hidden])")
         rec("blank form back to Groceries after reopening", page.input_value("#entry .l-cat") == "Groceries (food)")
@@ -306,6 +321,41 @@ def check():
         page.click(".tabs button[data-page=add]")
         lbl = page.eval_on_selector("#entry .l-cat", "s => s.options[s.selectedIndex].textContent")
         rec("Add drop-down shows % used", lbl == f"Groceries (food) · {exp_pct}%", lbl)
+        page.click(".tabs button[data-page=filter]")
+
+        # Kitty: everything jop enters comes off (spend) / adds to (income) the kitty
+        def kitty_expected():
+            start = [k for k in mock.kitty if k["kind"] == "opening"][-1]
+            t0 = start["created_at"]
+            bal = start["amount"] + sum(k["amount"] for k in mock.kitty if k["kind"] == "transfer" and k["created_at"] >= t0)
+            in_k = lambda r: r["kitty"] if r.get("kitty") is not None else str(r.get("created_by", "")).lower() == "jop"
+            bal -= sum(r["amount"] for r in mock.rows if in_k(r) and r["created_at"] >= t0)
+            return bal
+        page.wait_for_function("document.querySelector('#kitty-pill').textContent.startsWith('\u0e3f')")
+        exp_k = kitty_expected()
+        pill = page.text_content("#kitty-pill")
+        rec("kitty pill = 72,966 - jop's spending + jop's income (number only)", pill == f"\u0e3f{int(exp_k + 0.5):,}", f"{pill} expected {exp_k:,.2f}")
+        # jop unticks Kitty on one entry: it then doesn't touch the kitty
+        page.click(".tabs button[data-page=add]")
+        page.fill("#entry .l-amount", "700"); page.fill("#entry .l-comment", "paid by card, not kitty"); page.uncheck("#entry .l-kittybox")
+        page.click("#upload")
+        page.wait_for_function("document.querySelector('#add-msg').textContent.includes('uploaded')")
+        page.wait_for_timeout(500)
+        rec("jop's entry with Kitty unticked leaves the kitty alone", page.text_content("#kitty-pill") == pill
+            and mock.rows[-1]["kitty"] is False, page.text_content("#kitty-pill"))
+        rec("tick back on for jop's next entry", page.is_checked("#entry .l-kittybox"))
+        page.click(".tabs button[data-page=history]")
+        note_row = page.locator("#history-list .row:has-text('paid by card, not kitty') .r-note")
+        rec("history labels jop's entry 'not from kitty'", note_row.count() == 1 and note_row.text_content() == "not from kitty")
+        rec("normal entries have no kitty label", page.locator("#history-list .row:has-text('Fund withdrawal') .r-note").count() == 0)
+        page.screenshot(path=str(SHOTS / "16-history-kitty-note.png"))
+        rec("history rows don't touch the kitty", all(str(r.get("created_by")) != "jop" for r in mock.rows[:6600]))
+        page.click("#kitty-pill")
+        klist = page.text_content("#k-list")
+        rec("pill opens the kitty page", page.text_content("#page-title") == "Jop's kitty" and "Starting balance" in klist)
+        rec("statement: spending one line per month, income on its own",
+            klist.count("Spending · November 2026") == 1 and "Investment (+/-) · Fund withdrawal" in klist, klist[:160])
+        page.screenshot(path=str(SHOTS / "13-kitty.png"))
         page.click(".tabs button[data-page=filter]")
 
         # Edit + delete synced rows (from Filter, Nov 2026)
@@ -448,6 +498,14 @@ def check():
         # Edit budgets: hidden for jo, available to nigel
         page.click("#menu-btn")
         rec("Edit budgets hidden for jo", not page.is_visible("#menu button[data-action=budgets]"))
+        rec("Transfer to kitty shown for jop too", page.is_visible("#menu button[data-action=transfer]"))
+        k_before = kitty_expected()
+        page.click("#menu button[data-action=transfer]")
+        page.fill("#t-amount", "1000"); page.fill("#t-note", "from savings"); page.click("#t-save")
+        page.wait_for_selector("#kitty-dlg:not([open])", state="attached")
+        rec("jop's transfer adds to the kitty", page.text_content("#kitty-pill") == f"\u0e3f{int(k_before + 1000 + 0.5):,}",
+            page.text_content("#kitty-pill"))
+        page.click("#menu-btn")
         page.click("#menu button[data-action=logout]")
         page.wait_for_selector("#login:not([hidden])")
         rec("sign out", True)
@@ -478,6 +536,39 @@ def check():
         page.click("#b-prev")
         octo = page.text_content("#b-list .b-row:first-child")
         rec("new budget from Nov; October keeps the old one", "of ฿16,000" in nov and "of ฿14,000" in octo, f"{nov[-40:]} | {octo[-40:]}")
+        # Kitty transfer by nigel; nigel's own entries don't touch the kitty
+        before_k = kitty_expected()
+        page.click(".tabs button[data-page=add]")
+        page.fill("#entry .l-amount", "500"); page.fill("#entry .l-comment", "nigel lunch"); page.click("#upload")
+        page.wait_for_function("document.querySelector('#add-msg').textContent.includes('uploaded')")
+        page.wait_for_timeout(500)
+        rec("nigel's own spending leaves the kitty alone", page.text_content("#kitty-pill") == f"\u0e3f{int(before_k + 0.5):,}",
+            page.text_content("#kitty-pill"))
+        rec("kitty unticked by default for nigel", not page.is_checked("#entry .l-kittybox"))
+        page.fill("#entry .l-amount", "300"); page.fill("#entry .l-comment", "paid for jop"); page.check("#entry .l-kittybox")
+        page.click("#upload")
+        page.wait_for_function("document.querySelector('#add-msg').textContent.includes('uploaded')")
+        page.wait_for_timeout(500)
+        rec("nigel's entry with Kitty ticked comes off the kitty", page.text_content("#kitty-pill") == f"\u0e3f{int(before_k - 300 + 0.5):,}"
+            and mock.rows[-1]["kitty"] is True, page.text_content("#kitty-pill"))
+        before_k = kitty_expected()
+        page.click(".tabs button[data-page=history]")
+        rec("nigel's ticked entry has no label", page.locator("#history-list .row:has-text('paid for jop') .r-note").count() == 0)
+        n3 = page.locator("#history-list .row:has-text('nigel lunch') .r-note")
+        rec("nigel's unticked entry says 'not from kitty'", n3.count() == 1 and n3.text_content() == "not from kitty")
+        page.click("#menu-btn")
+        rec("Transfer to kitty shown for nigel", page.is_visible("#menu button[data-action=transfer]"))
+        page.click("#menu button[data-action=transfer]")
+        page.fill("#t-amount", "20000"); page.fill("#t-note", "top up")
+        page.screenshot(path=str(SHOTS / "14-transfer.png"))
+        page.click("#t-save")
+        page.wait_for_selector("#kitty-dlg:not([open])", state="attached")
+        rec("transfer saved", any(k["kind"] == "transfer" and k["amount"] == 20000 for k in mock.kitty))
+        rec("transfer adds to the kitty", page.text_content("#kitty-pill") == f"\u0e3f{int(before_k + 20000 + 0.5):,}",
+            page.text_content("#kitty-pill"))
+        page.click("#kitty-pill")
+        rec("transfer on the statement, newest first", "Transfer from nigel · top up" in page.text_content("#k-list .k-row:first-child"))
+        page.screenshot(path=str(SHOTS / "15-kitty-statement.png"))
         page.click("#menu-btn"); page.click("#menu button[data-action=logout]")
         page.wait_for_selector("#login:not([hidden])")
 
