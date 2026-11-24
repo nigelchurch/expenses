@@ -301,3 +301,17 @@ button.danger { color: var(--error); border-color: var(--error); }
 .s-amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .s-sub { grid-area: sub; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .s-edit { grid-area: edit; }
+
+/* Pop-up windows (edit expense, transfer): size to their contents and sit at the bottom.
+   iPhone Safari otherwise stretches the window to the full screen and every row grows with it. */
+#edit-dlg, #kitty-dlg {
+  position: fixed; inset: auto 0 0 0; height: auto; max-height: 92dvh; overflow-y: auto;
+  align-content: start; align-items: start;
+}
+#edit-dlg[open], #kitty-dlg[open] { grid-auto-rows: min-content; }
+#edit-dlg input, #edit-dlg select, #edit-dlg button, #kitty-dlg input, #kitty-dlg button { height: 44px; min-height: 44px; }
+#edit-dlg .kitty-tick { height: 44px; }
+#edit-dlg .kitty-tick input { height: 20px; min-height: 0; }
+@media (min-width: 600px) {
+  #edit-dlg, #kitty-dlg { inset: 0; margin: auto; height: fit-content; }
+}
