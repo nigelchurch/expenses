@@ -250,7 +250,7 @@ function renderCurrent() {
   if (currentPage === 'history') renderHistory();
   if (currentPage === 'filter') renderFilter();
   if (currentPage === 'budget') renderBudget();
-  if (currentPage === 'add') { const s = spending(); $$('#lines .line').forEach(n => updateCatLabels(n, s)); }
+  if (currentPage === 'add') updateCatLabels(form());
 }
 
 /* ---------- Budget ---------- */
@@ -322,6 +322,11 @@ function toast(msg) {
 }
 
 /* ---------- Add page ---------- */
+// One entry form at the top. "+ New line" moves the entry into a list below it (newest first);
+// "Upload expenses" sends the list (plus whatever is still in the form).
+let staged = []; // [{ id, month: '2026-11', category, amount: '54.2', comment }]
+const form = () => $('#entry');
+
 function categoryOptions(select, selected = '') {
   for (const c of CFG.CATEGORIES) {
     const o = document.createElement('option');
@@ -330,61 +335,82 @@ function categoryOptions(select, selected = '') {
     select.append(o);
   }
 }
-function addLine(data = {}) {
-  const node = $('#line-tpl').content.firstElementChild.cloneNode(true);
-  const lines = $$('#lines .line');
-  const prevMonth = lines.length ? $('.l-month', lines[lines.length - 1]).value : '';
-  $('.l-month', node).value = data.month || prevMonth || currentMonthIso().slice(0, 7);
-  categoryOptions($('.l-cat', node), data.category || CFG.DEFAULT_CATEGORY);
-  $('.l-amount', node).value = data.amount ?? '';
-  $('.l-comment', node).value = data.comment ?? '';
-  $('.l-del', node).addEventListener('click', () => {
-    if ($$('#lines .line').length > 1) node.remove();
-    else { $('.l-amount', node).value = ''; $('.l-comment', node).value = ''; $('.l-cat', node).value = CFG.DEFAULT_CATEGORY; }
-    saveDraft();
-  });
-  $('.l-month', node).addEventListener('change', () => updateCatLabels(node));
-  $('#lines').append(node);
-  updateCatLabels(node);
-  return node;
+function setForm(d = {}) {
+  const f = form();
+  $('.l-month', f).value = d.month || $('.l-month', f).value || currentMonthIso().slice(0, 7);
+  $('.l-cat', f).value = d.category || CFG.DEFAULT_CATEGORY;
+  $('.l-amount', f).value = d.amount ?? '';
+  $('.l-comment', f).value = d.comment ?? '';
+  f.classList.remove('invalid');
+  updateCatLabels(f);
 }
-function readLines() {
-  return $$('#lines .line').map(node => ({
-    node,
-    month: $('.l-month', node).value,
-    category: $('.l-cat', node).value,
-    amount: $('.l-amount', node).value.trim(),
-    comment: $('.l-comment', node).value.trim(),
-  }));
+function readForm() {
+  const f = form();
+  return {
+    month: $('.l-month', f).value,
+    category: $('.l-cat', f).value,
+    amount: $('.l-amount', f).value.trim(),
+    comment: $('.l-comment', f).value.trim(),
+  };
 }
-function saveDraft() {
-  store.set('draft', readLines().map(({ node, ...rest }) => rest));
-}
-function resetLines(keepMonth) {
-  $('#lines').innerHTML = '';
-  addLine({ month: keepMonth });
+const isBlank = d => !d.amount && !d.comment; // category is always pre-filled, so it doesn't count
+const isValid = d => /^\d{4}-\d{2}$/.test(d.month) && !!d.category && !Number.isNaN(parseAmount(d.amount));
+function saveDraft() { store.set('draft', { form: readForm(), staged }); }
+
+// Move the form's entry into the list. False (form marked red) if it isn't complete.
+function stageForm() {
+  const d = readForm();
+  if (isBlank(d)) return true;
+  if (!isValid(d)) {
+    form().classList.add('invalid');
+    toast('Month, category and amount are needed.');
+    return false;
+  }
+  staged.unshift({ id: uuid(), ...d, amount: String(parseAmount(d.amount)) });
+  setForm({ month: d.month });
+  renderStaged();
   saveDraft();
+  return true;
+}
+function renderStaged() {
+  const total = staged.reduce((t, d) => t + parseAmount(d.amount), 0);
+  $('#staged-head').hidden = !staged.length;
+  $('#staged-head').textContent = `Ready to upload: ${staged.length} · ${fmtAmount(total)}`;
+  $('#staged').innerHTML = staged.map(d => {
+    const amt = parseAmount(d.amount);
+    return `<div class="staged" data-id="${d.id}">
+      <div class="s-main"><span>${esc(d.category)}</span><span class="s-amt${amt < 0 ? ' neg' : ''}">${fmtAmount(amt)}</span></div>
+      <div class="s-sub">${fmtDate(`${d.month}-01`)}${d.comment ? ` · ${esc(d.comment)}` : ''}</div>
+      <button type="button" class="s-edit small-btn">Edit</button>
+    </div>`;
+  }).join('');
+}
+// Put a listed entry back into the form (anything already in the form goes to the list first)
+function editStaged(id) {
+  if (!stageForm()) return;
+  const i = staged.findIndex(d => d.id === id);
+  if (i < 0) return;
+  const [d] = staged.splice(i, 1);
+  setForm(d);
+  renderStaged();
+  saveDraft();
+  window.scrollTo(0, 0);
+}
+function flipSign(input) {
+  const v = input.value.trim();
+  input.value = v.startsWith('-') ? v.slice(1) : `-${v}`;
 }
 async function uploadLines() {
-  const lines = readLines();
-  const rows = [];
-  let bad = 0;
-  for (const l of lines) {
-    const empty = !l.amount && !l.comment; // category is always pre-filled, so it doesn't count
-    l.node.classList.remove('invalid');
-    if (empty) continue;
-    const amount = parseAmount(l.amount);
-    if (!/^\d{4}-\d{2}$/.test(l.month) || !l.category || Number.isNaN(amount)) {
-      l.node.classList.add('invalid'); bad++; continue;
-    }
-    rows.push({ month: `${l.month}-01`, category: l.category, amount, comment: l.comment, created_by: session.name, client_id: uuid() });
-  }
-  if (bad) { toast(`Fix the ${bad} line${bad === 1 ? '' : 's'} marked in red (month, category and amount are needed).`); return; }
-  if (!rows.length) { toast('Nothing to upload yet.'); return; }
-
-  const lastMonth = lines[lines.length - 1].month;
+  if (!stageForm()) return;
+  if (!staged.length) { toast('Nothing to upload yet.'); return; }
+  const rows = staged.slice().reverse().map(d => ({
+    month: `${d.month}-01`, category: d.category, amount: parseAmount(d.amount), comment: d.comment,
+    created_by: session.name, client_id: d.id,
+  }));
   queue(rows);
-  resetLines(lastMonth);
+  staged = [];
+  renderStaged();
+  saveDraft();
   $('#upload').disabled = true;
   try {
     await flushOutbox();
@@ -627,10 +653,17 @@ function init() {
     }
   });
 
-  $('#add-line').addEventListener('click', () => { const n = addLine(); $('.l-cat', n).focus(); saveDraft(); });
+  const f = form();
+  categoryOptions($('.l-cat', f), CFG.DEFAULT_CATEGORY);
+  $('#add-line').addEventListener('click', stageForm);
   $('#upload').addEventListener('click', uploadLines);
-  $('#lines').addEventListener('input', saveDraft);
-  $('#lines').addEventListener('change', saveDraft);
+  f.addEventListener('input', saveDraft);
+  f.addEventListener('change', saveDraft);
+  $('.l-month', f).addEventListener('change', () => updateCatLabels(f));
+  $('.l-sign', f).addEventListener('click', () => { flipSign($('.l-amount', f)); saveDraft(); });
+  $('.l-del', f).addEventListener('click', () => { setForm({ month: $('.l-month', f).value }); saveDraft(); });
+  $('#staged').addEventListener('click', e => { const b = e.target.closest('.s-edit'); if (b) editStaged(b.closest('.staged').dataset.id); });
+  $('#e-sign').addEventListener('click', () => flipSign($('#e-amount')));
 
   $('#f-cat').addEventListener('change', renderFilter);
   $('#f-month').addEventListener('change', renderFilter);
@@ -657,9 +690,11 @@ function init() {
   setInterval(() => { if (session && outbox.length && document.visibilityState === 'visible') sync(); }, 20000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
 
-  // Restore unsent lines, but only ones with something typed in; blank lines start fresh on the default category
-  const draft = store.get('draft', []).filter(d => d.amount || d.comment);
-  if (draft.length) draft.forEach(d => addLine(d)); else addLine();
+  // Restore the unsent list, and the form only if something was typed in (else it starts fresh on the default)
+  const draft = store.get('draft', {});
+  staged = Array.isArray(draft.staged) ? draft.staged : [];
+  setForm(draft.form && !isBlank(draft.form) ? draft.form : {});
+  renderStaged();
 
   if (session) showApp(); else showLogin();
 

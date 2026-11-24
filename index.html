@@ -4,7 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Expenses</title>
-  <meta name="theme-color" content="#1f6f5c">
+  <meta name="theme-color" content="#4fb89c">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Expenses">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -42,12 +46,23 @@
     <main>
       <!-- Add -->
       <div id="page-add" class="page">
-        <div id="lines"></div>
+        <div id="entry" class="line">
+          <div class="entry-grid">
+            <input type="month" class="l-month" aria-label="Month" required>
+            <input type="text" inputmode="decimal" class="l-amount" placeholder="Amount" aria-label="Amount">
+            <button type="button" class="l-sign sign-btn" aria-label="Switch plus / minus (minus = money in)">+/&minus;</button>
+            <button type="button" class="l-del icon-btn" aria-label="Clear this entry">&times;</button>
+          </div>
+          <select class="l-cat" aria-label="Category"></select>
+          <input type="text" class="l-comment" placeholder="Comment / detail" aria-label="Comment">
+        </div>
         <div class="actions">
           <button id="add-line" type="button">+ New line</button>
           <button id="upload" type="button" class="primary">Upload expenses</button>
         </div>
         <p id="add-msg" class="msg" role="status"></p>
+        <p id="staged-head" class="staged-head" hidden></p>
+        <div id="staged"></div>
       </div>
 
       <!-- History -->
@@ -109,9 +124,10 @@
 
   <dialog id="edit-dlg" aria-labelledby="e-title">
     <h2 id="e-title">Edit expense</h2>
-    <div class="line-row edit-row">
-      <input type="month" id="e-month" aria-label="Month">
-      <input type="text" inputmode="decimal" id="e-amount" aria-label="Amount">
+    <div class="entry-grid">
+      <input type="month" id="e-month" class="l-month" aria-label="Month">
+      <input type="text" inputmode="decimal" id="e-amount" class="l-amount" aria-label="Amount">
+      <button type="button" id="e-sign" class="l-sign sign-btn" aria-label="Switch plus / minus">+/&minus;</button>
     </div>
     <select id="e-cat" aria-label="Category"></select>
     <input type="text" id="e-comment" placeholder="Comment / detail" aria-label="Comment">
@@ -122,18 +138,6 @@
       <button type="button" id="e-save" class="primary">Save</button>
     </div>
   </dialog>
-
-  <template id="line-tpl">
-    <div class="line">
-      <div class="line-row">
-        <input type="month" class="l-month" aria-label="Month" required>
-        <input type="text" inputmode="decimal" class="l-amount" placeholder="Amount" aria-label="Amount">
-        <button type="button" class="l-del icon-btn" aria-label="Remove line">&times;</button>
-      </div>
-      <select class="l-cat" aria-label="Category"></select>
-      <input type="text" class="l-comment" placeholder="Comment / detail" aria-label="Comment">
-    </div>
-  </template>
 
   <script src="config.js"></script>
   <script src="app.js"></script>

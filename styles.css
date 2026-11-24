@@ -1,39 +1,21 @@
+/* Always the dark colours (black + green), whatever the phone's own setting */
 :root {
-  --bg: #f4f6f5;
-  --card: #ffffff;
-  --text: #1d2523;
-  --muted: #66716e;
-  --line: #d9dfdd;
-  --accent: #1f6f5c;
-  --accent-text: #ffffff;
-  --warn-bg: #fff4d6;
-  --warn-text: #6b4d00;
-  --error: #b3261e;
-  --neg: #b3261e;
-  --track: #e3e8e6;
-  --b-ok: #1f6f5c;
-  --b-warn: #b7791f;
-  --b-over: #b3261e;
-  color-scheme: light dark;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121615;
-    --card: #1c2220;
-    --text: #e6ecea;
-    --muted: #9aa6a2;
-    --line: #2f3835;
-    --accent: #4fb89c;
-    --accent-text: #0c1a16;
-    --warn-bg: #3a3010;
-    --warn-text: #f3d98a;
-    --error: #ff8a80;
-    --neg: #ff8a80;
-    --track: #2a3330;
-    --b-ok: #4fb89c;
-    --b-warn: #e0b040;
-    --b-over: #ff8a80;
-  }
+  --bg: #121615;
+  --card: #1c2220;
+  --text: #e6ecea;
+  --muted: #9aa6a2;
+  --line: #2f3835;
+  --accent: #4fb89c;
+  --accent-text: #0c1a16;
+  --warn-bg: #3a3010;
+  --warn-text: #f3d98a;
+  --error: #ff8a80;
+  --neg: #ff8a80;
+  --track: #2a3330;
+  --b-ok: #4fb89c;
+  --b-warn: #e0b040;
+  --b-over: #ff8a80;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -122,8 +104,6 @@ main { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 12px 16p
   background: var(--card); border: 1px solid var(--line); border-radius: 14px;
   padding: 10px; margin-bottom: 10px; display: grid; gap: 8px;
 }
-.line-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(96px, 0.8fr) 40px; gap: 8px; align-items: center; }
-.line-row > * { min-width: 0; }
 .line.invalid { border-color: var(--error); }
 .actions { display: flex; gap: 10px; margin-top: 4px; }
 .actions button { flex: 1; }
@@ -169,7 +149,6 @@ details.month > summary .m-meta { font-weight: 400; color: var(--muted); font-si
 #edit-dlg[open] { display: grid; gap: 10px; }
 #edit-dlg::backdrop { background: rgba(0,0,0,.45); }
 #edit-dlg h2 { margin: 0; font-size: 18px; }
-.edit-row { grid-template-columns: 1fr 1fr; }
 #e-msg { margin: 0; min-height: 0; }
 #e-msg:empty { display: none; }
 button.danger { color: var(--error); border-color: var(--error); }
@@ -203,9 +182,32 @@ button.danger { color: var(--error); border-color: var(--error); }
   .filters { grid-template-columns: 1fr; }
 }
 
-/* Narrow phones (iPhone 13 390px, Fold5 outer 344px): keep "November 2026" readable.
-   Text stays 16px: iPhones zoom the page when a smaller input is tapped. */
-@media (max-width: 400px) {
-  .line-row { grid-template-columns: minmax(0, 1fr) 80px 34px; gap: 6px; }
-  .line-row .l-month { padding: 8px 6px; }
+/* Entry form: month, amount, +/- and clear on one row; on phones month and amount get a row each */
+.entry-grid {
+  display: grid; gap: 8px; align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 52px 40px;
+  grid-template-areas: "month amount sign del";
 }
+.entry-grid > * { min-width: 0; }
+.entry-grid .l-month { grid-area: month; }
+.entry-grid .l-amount { grid-area: amount; }
+.entry-grid .l-sign { grid-area: sign; }
+.entry-grid .l-del { grid-area: del; }
+.sign-btn { padding: 0; font-weight: 700; font-size: 18px; }
+@media (max-width: 520px) {
+  .entry-grid { grid-template-columns: minmax(0, 1fr) 52px; grid-template-areas: "month del" "amount sign"; }
+}
+#edit-dlg .entry-grid { grid-template-columns: minmax(0, 1fr) 52px; grid-template-areas: "month month" "amount sign"; }
+
+/* Entries waiting to upload: compact two-line cards, newest first */
+.staged-head { margin: 14px 2px 6px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.staged {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main edit" "sub edit";
+  gap: 2px 12px; align-items: center;
+  background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+  border-radius: 10px; padding: 8px 10px 8px 12px; margin-bottom: 8px;
+}
+.s-main { grid-area: main; display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+.s-amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.s-sub { grid-area: sub; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.s-edit { grid-area: edit; }

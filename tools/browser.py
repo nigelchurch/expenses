@@ -158,42 +158,48 @@ def check():
         page.wait_for_selector("#app:not([hidden])")
         rec("login with name + password", True)
 
-        # Add two lines and upload
+        # Add: one entry form; "+ New line" moves it into a list below; upload sends list + form
         n0 = len(mock.rows)
-        page.select_option("#lines .line:nth-child(1) .l-cat", "Groceries (food)")
-        page.fill("#lines .line:nth-child(1) .l-amount", "54.20")
-        page.fill("#lines .line:nth-child(1) .l-comment", "Tesco weekly shop")
+        rec("form starts on Groceries", page.input_value("#entry .l-cat") == "Groceries (food)")
+        order = page.eval_on_selector_all("#entry .l-cat option", "os => os.map(o => o.value)")
+        rec("drop-down in new order", order[:3] == ["Groceries (food)", "Eating Out", "Domestic"] and order[10] == "Pocket Money (JOP)", str(order))
+        page.fill("#entry .l-amount", "54.20"); page.fill("#entry .l-comment", "Tesco weekly shop")
         page.click("#add-line")
-        page.select_option("#lines .line:nth-child(2) .l-cat", "Investment (+/-)")
-        page.fill("#lines .line:nth-child(2) .l-amount", "-250")
-        page.fill("#lines .line:nth-child(2) .l-comment", "Fund withdrawal")
+        rec("new line moves entry to list, form cleared",
+            page.locator("#staged .staged").count() == 1 and page.input_value("#entry .l-amount") == ""
+            and page.input_value("#entry .l-cat") == "Groceries (food)")
+        page.select_option("#entry .l-cat", "Beer"); page.fill("#entry .l-amount", "9"); page.fill("#entry .l-comment", "beer edit me")
+        page.click("#add-line")
+        rec("newest entry at top of list", "beer edit me" in page.text_content("#staged .staged:first-child"))
+        page.click("#staged .staged:first-child .s-edit")
+        rec("Edit puts entry back in form", page.input_value("#entry .l-comment") == "beer edit me"
+            and page.locator("#staged .staged").count() == 1)
+        page.click("#entry .l-del")
+        rec("clear button empties form", page.input_value("#entry .l-amount") == "" and page.input_value("#entry .l-cat") == "Groceries (food)")
+        page.select_option("#entry .l-cat", "Investment (+/-)")
+        page.fill("#entry .l-amount", "250"); page.click("#entry .l-sign")
+        rec("+/- button makes amount negative", page.input_value("#entry .l-amount") == "-250")
+        page.fill("#entry .l-comment", "Fund withdrawal")
+        page.reload(); page.wait_for_selector("#app:not([hidden])")
+        rec("list and half-filled form kept after reopening", page.locator("#staged .staged").count() == 1
+            and page.input_value("#entry .l-amount") == "-250")
         page.screenshot(path=str(SHOTS / "02-add.png"))
         page.click("#upload")
         page.wait_for_function("document.querySelector('#add-msg').textContent.includes('uploaded')")
         new = mock.rows[n0:]
-        rec("upload appends 2 rows", len(new) == 2, f"{len(new)} new")
+        rec("upload sends list + form (2 rows)", len(new) == 2, f"{len(new)} new")
         rec("month stored as 1st of month", all(r["month"] == "2026-11-01" for r in new), str([r["month"] for r in new]))
         rec("negative amount kept", any(r["amount"] == -250 for r in new))
+        rec("list emptied after upload", page.locator("#staged .staged").count() == 0)
 
-        # Blank line validation
-        page.fill("#lines .line:nth-child(1) .l-comment", "no amount given")
-        page.click("#upload")
-        rec("line without amount is flagged", page.locator("#lines .line.invalid").count() == 1)
-        page.click("#lines .line:nth-child(1) .l-del")
-        rec("new line defaults to Groceries", page.input_value("#lines .line:nth-child(1) .l-cat") == "Groceries (food)")
+        # Validation + defaults after reopening
+        page.fill("#entry .l-comment", "no amount given")
         page.click("#add-line")
-        rec("extra line also defaults to Groceries", page.input_value("#lines .line:nth-child(2) .l-cat") == "Groceries (food)")
-        order = page.eval_on_selector_all("#lines .line:nth-child(1) .l-cat option", "os => os.map(o => o.value)")
-        rec("drop-down in new order", order[:3] == ["Groceries (food)", "Eating Out", "Domestic"] and order[10] == "Pocket Money (JOP)", str(order))
-        page.click("#lines .line:nth-child(2) .l-del")
-        page.select_option("#lines .line:nth-child(1) .l-cat", "Beer")  # blank line, category changed
+        rec("entry without amount is flagged", page.locator("#entry.invalid").count() == 1)
+        page.click("#entry .l-del")
+        page.select_option("#entry .l-cat", "Beer")  # blank form, category changed
         page.reload(); page.wait_for_selector("#app:not([hidden])")
-        rec("blank line back to Groceries after reopening", page.input_value("#lines .line:nth-child(1) .l-cat") == "Groceries (food)")
-        page.select_option("#lines .line:nth-child(1) .l-cat", "Beer"); page.fill("#lines .line:nth-child(1) .l-amount", "99")
-        page.reload(); page.wait_for_selector("#app:not([hidden])")
-        rec("half-filled line kept after reopening", page.input_value("#lines .line:nth-child(1) .l-cat") == "Beer"
-            and page.input_value("#lines .line:nth-child(1) .l-amount") == "99")
-        page.click("#lines .line:nth-child(1) .l-del")
+        rec("blank form back to Groceries after reopening", page.input_value("#entry .l-cat") == "Groceries (food)")
 
         # History
         total_rows = len(mock.rows)
@@ -241,7 +247,7 @@ def check():
         rec("budget month back to October", page.text_content("#b-month") == "October 2026")
         page.click("#b-next")
         page.click(".tabs button[data-page=add]")
-        lbl = page.eval_on_selector("#lines .line:nth-child(1) .l-cat", "s => s.options[s.selectedIndex].textContent")
+        lbl = page.eval_on_selector("#entry .l-cat", "s => s.options[s.selectedIndex].textContent")
         rec("Add drop-down shows % used", lbl == f"Groceries (food) · {exp_pct}%", lbl)
         page.click(".tabs button[data-page=filter]")
 
@@ -286,9 +292,9 @@ def check():
         page.wait_for_function("document.querySelector('#net-status').textContent === 'Offline'", timeout=5000)
         rec("app opens offline and shows Offline", True)
         page.click(".tabs button[data-page=add]")
-        page.select_option("#lines .line:nth-child(1) .l-cat", "Cat expenses")
-        page.fill("#lines .line:nth-child(1) .l-amount", "18.99")
-        page.fill("#lines .line:nth-child(1) .l-comment", "Litter")
+        page.select_option("#entry .l-cat", "Cat expenses")
+        page.fill("#entry .l-amount", "18.99")
+        page.fill("#entry .l-comment", "Litter")
         n1 = len(mock.rows)
         page.click("#upload")
         page.wait_for_selector("#outbox-banner:not([hidden])")
