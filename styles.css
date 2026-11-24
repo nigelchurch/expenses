@@ -28,6 +28,18 @@ body {
 [hidden] { display: none !important; }
 
 button, input, select, textarea { font: inherit; color: inherit; }
+
+/* iPhone Safari: drop its own form-control sizing/styling so boxes keep to their space and don't overlap */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+input, select, textarea, button { -webkit-appearance: none; appearance: none; margin: 0; max-width: 100%; }
+input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; }
+input[type="month"] { display: block; min-width: 0; text-align: left; line-height: 1.4; }
+input[type="month"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+select:not([multiple]) { /* :not() makes this win over the general box styles below */
+  padding-right: 30px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%239aa6a2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; background-size: 12px 8px;
+}
 input, select, textarea {
   width: 100%;
   padding: 10px 12px;
@@ -213,7 +225,7 @@ button.danger { color: var(--error); border-color: var(--error); }
 .entry-grid .l-amount { grid-area: amount; }
 .entry-grid .l-type { grid-area: type; }
 .entry-grid .l-kitty { grid-area: kitty; }
-.entry-grid .l-cur { grid-area: cur; padding: 8px 6px; }
+.entry-grid .l-cur { grid-area: cur; padding: 8px 22px 8px 8px; background-position: right 7px center; }
 .l-fx { margin: -2px 2px 0; font-size: 13px; color: var(--muted); }
 .l-fx b { color: var(--text); }
 .l-fx a { color: var(--muted); }
