@@ -56,6 +56,9 @@ def serve(test_mode):
 class MockSupabase:
     def __init__(self):
         self.rows, self.offline, self.next_id = [], False, 1
+        cfg = (ROOT / "config.js").read_text(encoding="utf-8").split("BUDGETS: {")[1].split("}")[0]
+        self.budgets = [{"category": c, "amount": float(v), "from_month": "2020-02-01"}
+                        for c, v in re.findall(r"'([^']+)':\s*([\d.]+)", cfg)]
         cats = ["Groceries (food)", "Eating Out", "Beer", "Car Expenses", "Digital", "Cat expenses"]
         xlsx = ROOT / "history.xlsx"
         if xlsx.exists():  # the real history (6.6k rows) via the import script's own row builder
@@ -99,12 +102,14 @@ class MockSupabase:
             if q.get("grant_type") == ["password"]:
                 if body.get("email") == "jo@expenses.local" and body.get("password") == "secret":
                     return ok({"access_token": "tok", "refresh_token": "ref", "expires_in": 3600})
+                if body.get("email") == "nigel@expenses.local" and body.get("password") == "secret":
+                    return ok({"access_token": "tokN", "refresh_token": "refN", "expires_in": 3600})
                 return ok({"error": "invalid_grant", "error_description": "Invalid login credentials"}, 400)
             return ok({"access_token": "tok2", "refresh_token": "ref2", "expires_in": 3600})
         if u.path == "/auth/v1/logout":
             return ok(None, 204)
         if u.path == "/rest/v1/expenses":
-            if req.headers.get("authorization", "") not in ("Bearer tok", "Bearer tok2"):
+            if req.headers.get("authorization", "") not in ("Bearer tok", "Bearer tok2", "Bearer tokN"):
                 return ok({"message": "JWT invalid"}, 401)
             if req.method == "POST":
                 for r in json.loads(req.post_data):
@@ -122,6 +127,18 @@ class MockSupabase:
             rows = sorted(self.rows, key=lambda r: (r["month"], r["id"]), reverse=True)
             a, b = map(int, req.headers.get("range", f"0-{len(rows)}").split("-"))
             return ok(rows[a:b + 1])
+        if u.path == "/rest/v1/budgets":
+            authz = req.headers.get("authorization", "")
+            if authz not in ("Bearer tok", "Bearer tok2", "Bearer tokN"):
+                return ok({"message": "JWT invalid"}, 401)
+            if req.method == "POST":
+                if authz != "Bearer tokN":  # only nigel (row-level security in the real database)
+                    return ok({"message": "new row violates row-level security policy"}, 403)
+                for r in json.loads(req.post_data):
+                    self.budgets = [b for b in self.budgets if not (b["category"] == r["category"] and b["from_month"] == r["from_month"])]
+                    self.budgets.append({k: r[k] for k in ("category", "amount", "from_month")})
+                return ok(None, 201)
+            return ok(sorted(self.budgets, key=lambda b: b["from_month"]))
         return ok({"message": "not found"}, 404)
 
 
@@ -233,12 +250,19 @@ def check():
         total_rows = len(mock.rows)
         page.click(".tabs button[data-page=history]")
         page.wait_for_function("document.querySelectorAll('#history-list details').length > 0")
-        page.wait_for_function(f"document.querySelector('#history-info').textContent.includes('{total_rows} expenses')", timeout=10000)
+        page.wait_for_function(f"cache.rows.length === {total_rows}", timeout=10000)
+        info = page.text_content("#history-info")
+        rec("history top shows only 'Last synced'", info.startswith("Last synced") and "expenses" not in info, info)
         opened = page.eval_on_selector_all("#history-list details[open]", "els => els.map(e => e.dataset.month)")
         rec(f"all {total_rows} rows loaded (paging past 1000)", True)
         ms = page.evaluate("(() => { const t = performance.now(); renderHistory(); return performance.now() - t; })()")
         rec("history redraw is fast", ms < 150, f"{ms:.0f} ms, {page.locator('#history-list .row').count()} rows in page")
         rec("only current month expanded", opened == ["2026-11-01"], str(opened))
+        main = ["Pocket Money (NIG)", "Pocket Money (JOP)", "Groceries (food)", "Eating Out", "Domestic", "Beer", "Car Expenses",
+                "Cat expenses", "Health expenses", "Digital", "Travel and Holiday", "One-off expenses", "Quintara"]
+        exp_nov = sum(r["amount"] for r in mock.rows if r["month"] == "2026-11-01" and r["category"] in main)
+        meta = page.text_content("#history-list details[data-month='2026-11-01'] .m-meta")
+        rec("month total = main categories only", f"{abs(exp_nov):,.2f}" in meta, f"{meta} expected {exp_nov:,.2f}")
         page.screenshot(path=str(SHOTS / "03-history.png"))
         page.click("#history-list details[data-month='2026-10-01'] summary")
         page.screenshot(path=str(SHOTS / "04-history-oct-open.png"))
@@ -270,6 +294,9 @@ def check():
         first = page.text_content("#b-list .b-row:first-child")
         rec("budget tab: Groceries % for this month", f"{exp_pct}%" in first and "Groceries" in first, f"{first.split()[:6]} expected {exp_pct}%")
         rec("budget tab lists 13 budgeted categories", page.locator("#b-list .b-row").count() == 13)
+        btxt = page.text_content("#b-total") + page.text_content("#b-list")
+        rec("budget page: no decimals, no 'Budgeted categories' label", ".00" not in btxt and "Budgeted" not in btxt,
+            page.text_content("#b-total"))
         page.screenshot(path=str(SHOTS / "09-budget.png"), full_page=True)
         page.click("#b-prev")
         rec("budget month back to October", page.text_content("#b-month") == "October 2026")
@@ -413,10 +440,39 @@ def check():
             overflow = page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth")
             rec(f"no sideways scroll at {name} {w}x{h}", not overflow)
 
-        # Sign out
-        page.click("#menu-btn"); page.click("#menu button[data-action=logout]")
+        # Edit budgets: hidden for jo, available to nigel
+        page.click("#menu-btn")
+        rec("Edit budgets hidden for jo", not page.is_visible("#menu button[data-action=budgets]"))
+        page.click("#menu button[data-action=logout]")
         page.wait_for_selector("#login:not([hidden])")
         rec("sign out", True)
+        page.fill("#login-name", "nigel"); page.fill("#login-pass", "secret"); page.click("#login-form button")
+        page.wait_for_selector("#app:not([hidden])")
+        page.click("#menu-btn")
+        rec("Edit budgets shown for nigel", page.is_visible("#menu button[data-action=budgets]"))
+        page.click("#menu button[data-action=budgets]")
+        page.wait_for_selector("#be-list .be-row")
+        rec("edit list has the 13 categories with averages", page.locator("#be-list .be-row").count() == 13
+            and "3-mo" in page.text_content("#be-list .be-row:first-child"))
+        page.click("#be-list .be-row:first-child .be-edit")
+        rec("Edit shows the last 12 months", page.locator("#be-list .be-m").count() == 12)
+        page.screenshot(path=str(SHOTS / "11-edit-budget.png"), full_page=True)
+        page.click("#be-avg")
+        months3 = ["2026-10-01", "2026-09-01", "2026-08-01"]
+        exp_avg = round(sum(r["amount"] for r in mock.rows if r["category"] == "Groceries (food)" and r["month"] in months3) / 3)
+        rec("Use 3-mo avg fills the average", page.input_value("#be-amount") == str(exp_avg), f"{page.input_value('#be-amount')} vs {exp_avg}")
+        page.fill("#be-amount", "16000")
+        page.click("#be-save")
+        page.wait_for_function("!document.querySelector('#be-list .be-editor')")
+        saved = [b for b in mock.budgets if b["category"] == "Groceries (food)"]
+        rec("budget change saved with its start month", any(b["amount"] == 16000 and b["from_month"] == "2026-11-01" for b in saved), str(saved))
+        page.click(".tabs button[data-page=budget]")
+        nov = page.text_content("#b-list .b-row:first-child")
+        page.click("#b-prev")
+        octo = page.text_content("#b-list .b-row:first-child")
+        rec("new budget from Nov; October keeps the old one", "of ฿16,000" in nov and "of ฿14,000" in octo, f"{nov[-40:]} | {octo[-40:]}")
+        page.click("#menu-btn"); page.click("#menu button[data-action=logout]")
+        page.wait_for_selector("#login:not([hidden])")
 
         expected = ("internetdisconnected", "err_internet_disconnected",  # the deliberate offline tests
                     "status of 400")                                      # the deliberate wrong-password test

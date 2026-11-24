@@ -14,7 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 XLSX = ROOT / "history.xlsx"
 OLD_CATEGORIES = ["NOVA", "Relocation", "Car Repayment"]  # only in past data
-SKIP_CATEGORIES = {"incoming"}
+OLD_CATEGORIES += ["Incoming", "Uncategorised"]  # kept so BUDGET.xlsm totals match (Incoming -> MONEY IN in Excel)
+EXTRA_CATEGORIES = {"Incoming", "Uncategorised"}  # added in a second upload (--extra-only)
 
 
 def read_config():
@@ -51,7 +52,8 @@ def build_rows(path=XLSX, categories=None):
     import openpyxl
     categories = categories or read_config()["categories"]
     known = {c.lower(): c for c in categories + OLD_CATEGORIES}
-    ws = openpyxl.load_workbook(path, read_only=True, data_only=True).worksheets[0]
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.worksheets[0]  # the original table, not the "App data" sheet
     rows, skipped = [], []
     for n, vals in enumerate(ws.iter_rows(min_row=2, max_col=5, values_only=True), start=2):
         m, money_in, money_out, desc, detail = (list(vals) + [None] * 5)[:5]
@@ -60,10 +62,8 @@ def build_rows(path=XLSX, categories=None):
         cat = (str(desc).strip() if desc is not None else "")
         month = to_month(m)
         a_in, a_out = num(money_in), num(money_out)
-        if cat.lower() in SKIP_CATEGORIES:
-            skipped.append((n, "Incoming", vals)); continue
         if not cat:
-            skipped.append((n, "no category", vals)); continue
+            cat = "Uncategorised"
         if not month:
             skipped.append((n, "no date", vals)); continue
         if a_in is None and a_out is None:
@@ -97,9 +97,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--upload", action="store_true")
     ap.add_argument("--file", default=str(XLSX))
+    ap.add_argument("--extra-only", action="store_true", help="only the Incoming / Uncategorised rows")
     args = ap.parse_args()
     cfg = read_config()
     rows, skipped = build_rows(Path(args.file), cfg["categories"])
+    if args.extra_only:
+        rows = [r for r in rows if r["category"] in EXTRA_CATEGORIES]
 
     by_cat = collections.Counter(r["category"] for r in rows)
     by_year = collections.defaultdict(float)

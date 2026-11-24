@@ -6,7 +6,7 @@ const BASE = CFG.SUPABASE_URL.replace(/\/+$/, '');
 const KEY = CFG.SUPABASE_ANON_KEY;
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const PAGE_TITLES = { add: 'Add expenses', history: 'History', filter: 'Filter', budget: 'Budget', import: 'Import history' };
+const PAGE_TITLES = { add: 'Add expenses', history: 'History', filter: 'Filter', budget: 'Budget', budgets: 'Edit budgets', import: 'Import history' };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -29,10 +29,11 @@ function fmtMonthHeading(iso) {
   return `${MONTH_NAMES[m - 1]} ${y}`;
 }
 // Money in is stored negative. On screen it shows without the minus, in green (amtHtml); exports keep the minus.
-function fmtAmount(n) {
-  return CFG.CURRENCY + Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// dp = decimal places (the Budget page uses 0)
+function fmtAmount(n, dp = 2) {
+  return CFG.CURRENCY + Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: dp, maximumFractionDigits: dp });
 }
-const amtHtml = n => `<span class="${n < 0 ? 'inc' : ''}">${fmtAmount(n)}</span>`;
+const amtHtml = (n, dp = 2) => `<span class="${n < 0 ? 'inc' : ''}">${fmtAmount(n, dp)}</span>`;
 function currentMonthIso() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
@@ -207,6 +208,7 @@ async function sync({ quiet = true } = {}) {
   try {
     if (outbox.length) await flushOutbox();
     await fetchAll();
+    await fetchBudgets();
     setNet(true);
   } catch (e) {
     if (e instanceof OfflineError) setNet(false);
@@ -233,6 +235,7 @@ function showApp() {
   $('#login').hidden = true;
   $('#app').hidden = false;
   $('#user-name').textContent = session.name;
+  $('#menu [data-action=budgets]').hidden = !isBudgetEditor();
   updateBanner();
   updateNet();
   showPage(currentPage);
@@ -240,7 +243,7 @@ function showApp() {
 }
 function showPage(page) {
   currentPage = page;
-  for (const p of ['add', 'history', 'filter', 'budget', 'import']) $(`#page-${p}`).hidden = p !== page;
+  for (const p of ['add', 'history', 'filter', 'budget', 'budgets', 'import']) $(`#page-${p}`).hidden = p !== page;
   $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   $('#page-title').textContent = PAGE_TITLES[page];
   $('#menu').hidden = true;
@@ -252,6 +255,7 @@ function renderPage(p) {
   if (p === 'history') renderHistory();
   if (p === 'filter') renderFilter();
   if (p === 'budget') renderBudget();
+  if (p === 'budgets') renderBudgetEditor();
   if (p === 'add') updateCatLabels(form());
 }
 
@@ -348,11 +352,111 @@ function updateCatLabels(node, spent = spending()) {
   const month = `${$('.l-month', node).value}-01`;
   const used = spent[month] || {};
   for (const o of $('.l-cat', node).options) {
-    const b = CFG.BUDGETS[o.value];
+    const b = CFG.BUDGETS[o.value] ? budgetFor(o.value, month) : 0;
     o.textContent = b ? `${o.value} · ${pctOf(used[o.value] || 0, b)}%` : o.value;
   }
 }
 let budgetMonth = currentMonthIso();
+
+/* ---------- Budgets with history (database table "budgets") ---------- */
+// Each row: { category, amount, from_month }. A month uses the latest row with from_month <= that month.
+let budgetRows = store.get('budgets', []);
+let budgetIndex = indexBudgets(budgetRows);
+function indexBudgets(rows) {
+  const idx = {};
+  for (const r of rows) (idx[r.category] ||= []).push({ from: r.from_month, amount: Number(r.amount) });
+  for (const k in idx) idx[k].sort((a, b) => (a.from < b.from ? -1 : 1));
+  return idx;
+}
+function budgetFor(cat, month) {
+  const list = budgetIndex[cat];
+  if (!list || !list.length) return CFG.BUDGETS[cat] || 0;
+  let b = list[0].amount; // months before the first entry use the first budget
+  for (const r of list) if (r.from <= month) b = r.amount;
+  return b;
+}
+async function fetchBudgets() {
+  try {
+    const res = await api('budgets?select=category,amount,from_month&order=from_month.asc');
+    budgetRows = await res.json();
+    budgetIndex = indexBudgets(budgetRows);
+    store.set('budgets', budgetRows);
+  } catch (e) {
+    if (e instanceof OfflineError || e instanceof AuthError) throw e;
+    // table not set up yet: keep using the starting budgets from config.js
+  }
+}
+const isBudgetEditor = () => !!session && (CFG.BUDGET_EDITORS || []).includes(session.name.trim().toLowerCase());
+
+// Actual spend for one category in the n completed months before this one (newest first)
+function pastMonths(n) {
+  const out = [];
+  for (let i = 1; i <= n; i++) out.push(shiftMonth(currentMonthIso(), -i));
+  return out;
+}
+const avg = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+function catStats(cat, spent) {
+  const months = pastMonths(12).map(m => ({ month: m, actual: (spent[m] || {})[cat] || 0, budget: budgetFor(cat, m) }));
+  return { months, last: months[0].actual, avg3: avg(months.slice(0, 3).map(x => x.actual)), avg12: avg(months.map(x => x.actual)) };
+}
+
+let openBudgetCat = null;
+function renderBudgetEditor() {
+  const spent = spending();
+  const cur = currentMonthIso();
+  const cats = CFG.CATEGORIES.filter(c => CFG.BUDGETS[c]);
+  $('#be-list').innerHTML = cats.map(cat => {
+    const st = catStats(cat, spent), b = budgetFor(cat, cur);
+    const hi = v => (v > b ? ' class="over"' : '');
+    let editor = '';
+    if (cat === openBudgetCat) {
+      editor = `<div class="be-editor">
+        <div class="be-form">
+          <label>New monthly budget<input id="be-amount" inputmode="decimal" value="${Math.round(b)}"></label>
+          <label>Applies from<input id="be-from" type="month" value="${cur.slice(0, 7)}"></label>
+        </div>
+        <div class="actions">
+          <button type="button" id="be-avg" class="small-btn">Use 3-mo avg</button>
+          <button type="button" id="be-cancel">Cancel</button>
+          <button type="button" id="be-save" class="primary">Save</button>
+        </div>
+        <p id="be-msg" class="small error" role="alert"></p>
+        <h3>Last 12 months</h3>
+        <div class="be-months">${st.months.map(x => `<div class="be-m${x.actual > x.budget ? ' over' : ''}">
+          <span>${fmtMonthHeading(x.month)}</span><span>${amtHtml(x.actual, 0)}</span><span class="muted">of ${fmtAmount(x.budget, 0)}</span></div>`).join('')}</div>
+      </div>`;
+    }
+    return `<div class="be-row${cat === openBudgetCat ? ' open' : ''}" data-cat="${esc(cat)}">
+      <div class="be-top"><span class="be-cat">${esc(cat)}</span><span class="be-amt">${fmtAmount(b, 0)}</span>
+        <button type="button" class="small-btn be-edit">${cat === openBudgetCat ? 'Close' : 'Edit'}</button></div>
+      <div class="be-sub">last mo <b${hi(st.last)}>${fmtAmount(st.last, 0)}</b> · 3-mo <b${hi(st.avg3)}>${fmtAmount(st.avg3, 0)}</b> · 12-mo <b${hi(st.avg12)}>${fmtAmount(st.avg12, 0)}</b></div>
+      ${editor}
+    </div>`;
+  }).join('');
+}
+async function saveBudget() {
+  const cat = openBudgetCat;
+  const amount = parseAmount($('#be-amount').value);
+  const from = $('#be-from').value;
+  if (Number.isNaN(amount) || amount < 0 || !/^\d{4}-\d{2}$/.test(from)) { $('#be-msg').textContent = 'Enter an amount and a month.'; return; }
+  $('#be-save').disabled = true;
+  try {
+    await api('budgets?on_conflict=category,from_month', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: [{ category: cat, amount, from_month: `${from}-01`, created_by: session.name }],
+    });
+    await fetchBudgets();
+    openBudgetCat = null;
+    renderBudgetEditor();
+    toast(`${cat}: ${fmtAmount(amount, 0)} from ${fmtMonthHeading(`${from}-01`)} saved ✓`);
+  } catch (e) {
+    if (e instanceof AuthError) { logout(); return; }
+    $('#be-msg').textContent = e instanceof OfflineError ? 'No connection — budgets can only be changed online.'
+      : /row-level|permission|policy/i.test(e.message) ? 'Only nigel can change budgets.' : e.message;
+    $('#be-save').disabled = false;
+  }
+}
 function shiftMonth(iso, n) {
   const [y, m] = iso.split('-').map(Number);
   const d = new Date(y, m - 1 + n, 1);
@@ -364,19 +468,19 @@ function renderBudget() {
   $('#b-next').disabled = budgetMonth >= currentMonthIso();
   let totSpent = 0, totBudget = 0, html = '';
   for (const cat of CFG.CATEGORIES.filter(c => CFG.BUDGETS[c])) {
-    const budget = CFG.BUDGETS[cat], spent = used[cat] || 0, pct = pctOf(spent, budget);
+    const budget = budgetFor(cat, budgetMonth), spent = used[cat] || 0, pct = pctOf(spent, budget);
     totSpent += spent; totBudget += budget;
     const over = spent > budget;
     const state = over ? 'over' : pct >= 80 ? 'warn' : '';
     const left = budget - spent;
-    html += `<div class="b-row ${state}" title="${esc(cat)}: ${fmtAmount(spent)} of ${fmtAmount(budget)}">
+    html += `<div class="b-row ${state}" title="${esc(cat)}: ${fmtAmount(spent, 0)} of ${fmtAmount(budget, 0)}">
       <div class="b-top"><span>${esc(cat)}</span><span class="b-pct">${over ? '▲ ' : ''}${pct}%</span></div>
       <div class="b-track"><div class="b-fill" style="width:${Math.max(0, Math.min(pct, 100))}%"></div></div>
-      <div class="b-sub">${amtHtml(spent)} of ${fmtAmount(budget)} · ${left >= 0 ? `${fmtAmount(left)} left` : `over by ${fmtAmount(-left)}`}</div>
+      <div class="b-sub">${amtHtml(spent, 0)} of ${fmtAmount(budget, 0)} · ${left >= 0 ? `${fmtAmount(left, 0)} left` : `over by ${fmtAmount(-left, 0)}`}</div>
     </div>`;
   }
   $('#b-list').innerHTML = html;
-  $('#b-total').textContent = `Budgeted categories: ${fmtAmount(totSpent)} of ${fmtAmount(totBudget)} (${pctOf(totSpent, totBudget)}%)`;
+  $('#b-total').textContent = `${fmtAmount(totSpent, 0)} of ${fmtAmount(totBudget, 0)} (${pctOf(totSpent, totBudget)}%)`;
   const others = Object.entries(used).filter(([c]) => !CFG.BUDGETS[c]);
   $('#b-other').innerHTML = others.length
     ? `<h3>No budget set</h3><div id="f-list">${others.map(([c, v]) => rowHtml({ category: c, amount: v, comment: '' }).replace('role="button" tabindex="0"', '')).join('')}</div>`
@@ -397,6 +501,7 @@ let toastTimer;
 function toast(msg) {
   const m = $('#add-msg');
   if (currentPage === 'add') { m.textContent = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => { m.textContent = ''; }, 6000); }
+  else if (currentPage === 'budgets') $('#be-info').textContent = msg;
   else $('#history-info').textContent = msg;
 }
 
@@ -543,7 +648,8 @@ function renderHistory() {
   const firstRender = !$('#history-list details');
   let html = '';
   for (const [month, items] of historyGroups) {
-    const total = items.reduce((s, r) => s + r.amount, 0);
+    // Month total = the main (budgeted) categories only: no Incoming, Investment, Planned etc.
+    const total = items.reduce((s, r) => s + (CFG.BUDGETS[r.category] ? r.amount : 0), 0);
     const open = firstRender ? month === cur : (openNow.has(month) || (month === cur && !$(`#history-list details[data-month="${month}"]`)));
     html += `<details class="month" data-month="${month}"${open ? ' open' : ''}>
       <summary><span class="m-name">${fmtMonthHeading(month)}</span>
@@ -554,7 +660,7 @@ function renderHistory() {
   $('#history-list').innerHTML = html || '<p class="muted">No expenses yet.</p>';
   $$('#history-list details[open]').forEach(fillMonth);
   $('#history-info').textContent = cache.fetchedAt
-    ? `${rows.length} expenses · last synced ${new Date(cache.fetchedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}`
+    ? `Last synced ${new Date(cache.fetchedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}`
     : (navigator.onLine ? 'Loading…' : 'Offline — nothing saved on this phone yet.');
 }
 
@@ -733,6 +839,7 @@ function init() {
   $('#menu').addEventListener('click', e => {
     const a = e.target.closest('button')?.dataset.action;
     if (a === 'import') showPage('import');
+    if (a === 'budgets') { openBudgetCat = null; showPage('budgets'); }
     if (a === 'refresh') { $('#menu').hidden = true; sync({ quiet: false }); }
     if (a === 'logout') {
       if (outbox.length && !confirm(`${outbox.length} expenses have not uploaded yet. They stay on this phone and upload after the next sign-in. Sign out?`)) return;
@@ -760,6 +867,14 @@ function init() {
   $('#b-next').addEventListener('click', () => { budgetMonth = shiftMonth(budgetMonth, 1); renderBudget(); });
 
   initSwipe();
+  $('#be-list').addEventListener('click', e => {
+    const row = e.target.closest('.be-row');
+    if (!row) return;
+    if (e.target.closest('.be-edit')) { openBudgetCat = openBudgetCat === row.dataset.cat ? null : row.dataset.cat; renderBudgetEditor(); }
+    if (e.target.closest('#be-cancel')) { openBudgetCat = null; renderBudgetEditor(); }
+    if (e.target.closest('#be-avg')) $('#be-amount').value = Math.round(catStats(openBudgetCat, spending()).avg3);
+    if (e.target.closest('#be-save')) saveBudget();
+  });
   $('#history-list').addEventListener('toggle', e => fillMonth(e.target), true);
   for (const list of ['#history-list', '#f-list']) {
     $(list).addEventListener('click', e => { const row = e.target.closest('.row'); if (row) openEditor(row.dataset.key); });

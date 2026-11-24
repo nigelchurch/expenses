@@ -37,6 +37,7 @@
     </header>
     <div id="menu" class="menu" hidden>
       <p class="menu-user">Signed in as <b id="user-name"></b></p>
+      <button data-action="budgets" hidden>Edit budgets</button>
       <button data-action="import">Import history (paste from Excel)</button>
       <button data-action="refresh">Refresh from server</button>
       <button data-action="logout">Sign out</button>
@@ -100,6 +101,14 @@
         <div id="b-total" class="b-total"></div>
         <div id="b-list"></div>
         <div id="b-other"></div>
+      </div>
+
+      <!-- Edit budgets (nigel only) -->
+      <div id="page-budgets" class="page" hidden>
+        <p class="small muted">Monthly budgets. A change applies from the month you pick onwards; earlier months keep their old budget.
+          Averages are of completed months.</p>
+        <p id="be-info" class="small" role="status"></p>
+        <div id="be-list"></div>
       </div>
 
       <!-- Import -->

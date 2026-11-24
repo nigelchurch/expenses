@@ -12,10 +12,14 @@ window.APP_CONFIG = {
   // Shown in front of amounts, e.g. '£' or '€'. Leave '' for none.
   CURRENCY: '฿',
 
+  // Login names that may edit budgets (the database enforces this too)
+  BUDGET_EDITORS: ['nigel'],
+
   // New lines start on this category (saves a tap most of the time)
   DEFAULT_CATEGORY: 'Groceries (food)',
 
-  // Monthly budget per category (categories not listed have no budget)
+  // The main (budgeted) categories and their starting budgets. The live budgets, with history,
+  // are in the database (supabase/budgets.sql); these are only used until it has loaded.
   BUDGETS: {
     'Pocket Money (NIG)': 5000,
     'Pocket Money (JOP)': 5000,
