@@ -411,6 +411,15 @@ async function fetchBudgets() {
     // table not set up yet: keep using the starting budgets from config.js
   }
 }
+// iPhone Safari: no auto-zoom while a pop-up window is open (pinch-zoom elsewhere is unaffected)
+const viewportMeta = document.querySelector('meta[name="viewport"]');
+const baseViewport = viewportMeta.content;
+function lockZoom(on) { viewportMeta.content = on ? `${baseViewport}, maximum-scale=1` : baseViewport; }
+for (const id of ['edit-dlg', 'kitty-dlg']) {
+  const dlg = document.getElementById(id);
+  new MutationObserver(() => lockZoom(dlg.open)).observe(dlg, { attributes: true, attributeFilter: ['open'] });
+}
+
 const isBudgetEditor = () => !!session && (CFG.BUDGET_EDITORS || []).includes(session.name.trim().toLowerCase());
 
 // Actual spend for one category in the n completed months before this one (newest first)

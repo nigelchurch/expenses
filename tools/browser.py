@@ -332,7 +332,12 @@ def check():
         page.screenshot(path=str(SHOTS / "18-category-month.png"))
         page.click("#cm-list .row:first-child")
         rec("items there are editable", page.is_visible("#edit-dlg"))
+        rec("no auto-zoom while a window is open", "maximum-scale=1" in page.get_attribute('meta[name="viewport"]', "content"))
+        small = page.evaluate("""[...document.querySelectorAll('input:not([type=checkbox]), select, textarea')]
+            .filter(e => parseFloat(getComputedStyle(e).fontSize) < 16).map(e => e.id || e.className)""")
+        rec("every typing box is at least 16px (no iPhone zoom)", not small, str(small))
         page.click("#e-cancel")
+        rec("zoom allowed again after closing", "maximum-scale" not in page.get_attribute('meta[name="viewport"]', "content"))
         page.click("#cm-back")
         rec("back to Budget", page.text_content("#page-title") == "Budget")
         page.click(".b-orow:has-text('Planned expenses')")

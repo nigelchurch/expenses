@@ -315,3 +315,7 @@ button.danger { color: var(--error); border-color: var(--error); }
 @media (min-width: 600px) {
   #edit-dlg, #kitty-dlg { inset: 0; margin: auto; height: fit-content; }
 }
+
+/* iPhone Safari zooms the page when a box with text under 16px is tapped (and stays zoomed).
+   Keep every typing box / drop-down at 16px, whatever the surrounding label size. */
+input:not([type="checkbox"]), select, textarea { font-size: 16px !important; }
