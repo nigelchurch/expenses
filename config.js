@@ -19,7 +19,7 @@ window.APP_CONFIG = {
 
   // Foreign currencies on the Add page: amounts are converted to THB with today's rate + MARGIN (bank's edge).
   // TOP: shown first in the drop-down (THB always first); the rest follow alphabetically.
-  FX: { URL: 'https://open.er-api.com/v6/latest/THB', MARGIN: 0.02, TOP: ['THB', 'GBP', 'MYR', 'KES', 'EUR', 'USD'] },
+  FX: { URL: 'https://open.er-api.com/v6/latest/THB', MARGIN: 0.02, TOP: ['THB', 'GBP', 'MYR', 'KES', 'EUR', 'USD', 'SGD', 'HKD', 'TWD', 'JPY'] },
 
   // Login names that may edit budgets (the database enforces this too)
   BUDGET_EDITORS: ['nigel'],

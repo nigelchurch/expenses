@@ -188,7 +188,8 @@ def check():
                                                    viewport={"width": 411, "height": 960}, device_scale_factor=2,
                                                    permissions=["clipboard-read", "clipboard-write"])
         ctx.route(f"{MOCK}/**", mock.handle)
-        fx_rates = {"THB": 1, "GBP": 0.0225, "MYR": 0.12, "KES": 3.8, "EUR": 0.027, "USD": 0.0294, "AUD": 0.044, "JPY": 4.4, "ZAR": 0.5}
+        fx_rates = {"THB": 1, "GBP": 0.0225, "MYR": 0.12, "KES": 3.8, "EUR": 0.027, "USD": 0.0294, "AUD": 0.044, "JPY": 4.4, "ZAR": 0.5,
+                    "SGD": 0.039, "HKD": 0.23, "TWD": 0.93, "CHF": 0.026}
         ctx.route("https://open.er-api.com/**", lambda route: route.abort("internetdisconnected") if mock.offline else route.fulfill(
             status=200, headers={"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"},
             body=json.dumps({"result": "success", "base_code": "THB", "time_last_update_unix": 1795478400, "rates": fx_rates})))
@@ -352,13 +353,15 @@ def check():
         # Foreign currency on the Add page
         page.wait_for_function("document.querySelectorAll('#entry .l-cur option').length > 6")
         opts = page.eval_on_selector_all("#entry .l-cur option", "os => os.map(o => o.value)")
-        rec("currency list: THB first, then GBP MYR KES EUR USD, then A-Z", opts[:6] == ["THB", "GBP", "MYR", "KES", "EUR", "USD"]
-            and opts[7:] == sorted(opts[7:]) and page.input_value("#entry .l-cur") == "THB", str(opts))
+        top = ["THB", "GBP", "MYR", "KES", "EUR", "USD", "SGD", "HKD", "TWD", "JPY"]
+        rec("currency list: THB, favourites, then A-Z", opts[:10] == top and opts[11:] == sorted(opts[11:])
+            and page.input_value("#entry .l-cur") == "THB", str(opts))
         rec("THB shows no conversion line", not page.is_visible("#entry .l-fx"))
         page.select_option("#entry .l-cur", "EUR"); page.fill("#entry .l-amount", "45"); page.fill("#entry .l-comment", "Paris lunch")
         exp_thb = round(45 / 0.027 * 1.02, 2)
         fxline = page.text_content("#entry .l-fx")
         rec("live THB equivalent incl. 2%", f"\u0e3f{exp_thb:,.2f}" in fxline, fxline)
+        rec("rate credit on its own line", page.eval_on_selector("#entry .l-fx", "p => p.innerHTML.includes('<br><a')"))
         page.screenshot(path=str(SHOTS / "17-currency.png"))
         page.click("#upload")
         page.wait_for_function("document.querySelector('#add-msg').textContent.includes('uploaded')")
@@ -618,7 +621,8 @@ def demo():
         ctx = p.chromium.launch_persistent_context(prof, channel="msedge", headless=False, no_viewport=True,
                                                    args=["--window-size=460,980"])
         ctx.route(f"{MOCK}/**", mock.handle)
-        fx_rates = {"THB": 1, "GBP": 0.0225, "MYR": 0.12, "KES": 3.8, "EUR": 0.027, "USD": 0.0294, "AUD": 0.044, "JPY": 4.4, "ZAR": 0.5}
+        fx_rates = {"THB": 1, "GBP": 0.0225, "MYR": 0.12, "KES": 3.8, "EUR": 0.027, "USD": 0.0294, "AUD": 0.044, "JPY": 4.4, "ZAR": 0.5,
+                    "SGD": 0.039, "HKD": 0.23, "TWD": 0.93, "CHF": 0.026}
         ctx.route("https://open.er-api.com/**", lambda route: route.abort("internetdisconnected") if mock.offline else route.fulfill(
             status=200, headers={"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"},
             body=json.dumps({"result": "success", "base_code": "THB", "time_last_update_unix": 1795478400, "rates": fx_rates})))

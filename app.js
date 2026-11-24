@@ -676,7 +676,7 @@ function updateFx() {
   if (!per) { line.classList.add('bad'); line.textContent = `No ${cur} rate yet — needs the internet once.`; return; }
   const n = parseAmount($('.l-amount', f).value);
   const credit = '<a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Rates By Exchange Rate API</a>';
-  line.innerHTML = `${Number.isNaN(n) ? '' : `≈ <b>${fmtAmount(Math.abs(n) * per)}</b> · `}1 ${cur} = ${fmtAmount(per)} incl. ${Math.round(CFG.FX.MARGIN * 100)}% · ${fmtRateDate(fx.updated)} · ${credit}`;
+  line.innerHTML = `${Number.isNaN(n) ? '' : `≈ <b>${fmtAmount(Math.abs(n) * per)}</b> · `}1 ${cur} = ${fmtAmount(per)} incl. ${Math.round(CFG.FX.MARGIN * 100)}% · ${fmtRateDate(fx.updated)}<br>${credit}`;
 }
 const fmtOrig = (n, cur) => `${Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
 
