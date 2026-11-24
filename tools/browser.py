@@ -161,7 +161,6 @@ class MockSupabase:
 LINT_RULES = [
     ("index.html", lambda s: 'name="apple-mobile-web-app-capable"' in s and 'name="mobile-web-app-capable"' not in s,
      'apple-mobile-web-app-capable without the standard <meta name="mobile-web-app-capable" content="yes">'),
-    ("index.html", lambda s: "user-scalable=no" in s or "maximum-scale=1" in s, "zoom disabled in viewport meta (accessibility)"),
     ("index.html", lambda s: 'name="viewport"' not in s, "missing viewport meta"),
     ("index.html", lambda s: 'rel="manifest"' not in s, "missing manifest link"),
 ]
@@ -208,7 +207,9 @@ def check():
         page.goto(base)
         page.wait_for_selector("#login:not([hidden])")
         page.screenshot(path=str(SHOTS / "01-login.png"))
-        rec("no auto-zoom on the sign-in screen", "maximum-scale=1" in page.get_attribute('meta[name="viewport"]', "content"))
+        vp = page.get_attribute('meta[name="viewport"]', "content")
+        rec("zoom turned off (page setting + touch rule)", "user-scalable=no" in vp and "maximum-scale=1" in vp
+            and page.evaluate("getComputedStyle(document.documentElement).touchAction") == "pan-x pan-y", vp)
 
         page.fill("#login-name", "jop"); page.fill("#login-pass", "wrong"); page.click("#login-form button")
         page.wait_for_function("document.querySelector('#login-error').textContent.length > 0")
@@ -217,8 +218,6 @@ def check():
         page.fill("#login-pass", "secret"); page.click("#login-form button")
         page.wait_for_selector("#app:not([hidden])")
         rec("login with name + password", True)
-        page.wait_for_timeout(600)
-        rec("zoom reset then allowed again after sign-in", "maximum-scale" not in page.get_attribute('meta[name="viewport"]', "content"))
 
         # Add: one entry form; "+ New line" moves it into a list below; upload sends list + form
         n0 = len(mock.rows)
@@ -335,12 +334,10 @@ def check():
         page.screenshot(path=str(SHOTS / "18-category-month.png"))
         page.click("#cm-list .row:first-child")
         rec("items there are editable", page.is_visible("#edit-dlg"))
-        rec("no auto-zoom while a window is open", "maximum-scale=1" in page.get_attribute('meta[name="viewport"]', "content"))
         small = page.evaluate("""[...document.querySelectorAll('input:not([type=checkbox]), select, textarea')]
             .filter(e => parseFloat(getComputedStyle(e).fontSize) < 16).map(e => e.id || e.className)""")
         rec("every typing box is at least 16px (no iPhone zoom)", not small, str(small))
         page.click("#e-cancel")
-        rec("zoom allowed again after closing", "maximum-scale" not in page.get_attribute('meta[name="viewport"]', "content"))
         page.click("#cm-back")
         rec("back to Budget", page.text_content("#page-title") == "Budget")
         page.click(".b-orow:has-text('Planned expenses')")

@@ -226,7 +226,6 @@ async function sync({ quiet = true } = {}) {
 let currentPage = 'add';
 
 function showLogin() {
-  lockZoom(true); // iPhone: no auto-zoom on the sign-in boxes
   $('#app').hidden = true;
   $('#login').hidden = false;
   $('#login-pass').value = '';
@@ -235,9 +234,6 @@ function showLogin() {
   }
 }
 function showApp() {
-  // iPhone: snap back to normal size after signing in (setting maximum-scale resets any zoom), then allow pinch again
-  lockZoom(true);
-  setTimeout(() => lockZoom(false), 400);
   $('#login').hidden = true;
   $('#app').hidden = false;
   $('#user-name').textContent = session.name;
@@ -415,14 +411,9 @@ async function fetchBudgets() {
     // table not set up yet: keep using the starting budgets from config.js
   }
 }
-// iPhone Safari: no auto-zoom while a pop-up window is open (pinch-zoom elsewhere is unaffected)
-const viewportMeta = document.querySelector('meta[name="viewport"]');
-const baseViewport = viewportMeta.content;
-function lockZoom(on) { viewportMeta.content = on ? `${baseViewport}, maximum-scale=1` : baseViewport; }
-for (const id of ['edit-dlg', 'kitty-dlg']) {
-  const dlg = document.getElementById(id);
-  new MutationObserver(() => lockZoom(dlg.open)).observe(dlg, { attributes: true, attributeFilter: ['open'] });
-}
+// No zooming anywhere (by request). iPhone Safari ignores the page setting for pinches, but obeys these:
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
 // The version actually installed on this phone = the name of its offline copy (expenses-vNN)
 async function showVersion() {
