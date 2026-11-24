@@ -260,7 +260,7 @@ function renderPage(p) {
 }
 
 /* ---------- Swipe between tabs: the page follows the finger ---------- */
-const TAB_ORDER = ['add', 'history', 'filter', 'budget'];
+const TAB_ORDER = ['add', 'history', 'budget', 'filter'];
 function initSwipe() {
   const main = $('main');
   let st = null; // current drag
@@ -405,34 +405,44 @@ function renderBudgetEditor() {
   const spent = spending();
   const cur = currentMonthIso();
   const cats = CFG.CATEGORIES.filter(c => CFG.BUDGETS[c]);
-  $('#be-list').innerHTML = cats.map(cat => {
-    const st = catStats(cat, spent), b = budgetFor(cat, cur);
+  const avgLine = (st, b) => {
     const hi = v => (v > b ? ' class="over"' : '');
-    let editor = '';
-    if (cat === openBudgetCat) {
-      editor = `<div class="be-editor">
-        <div class="be-form">
-          <label>New monthly budget<input id="be-amount" inputmode="decimal" value="${Math.round(b)}"></label>
-          <label>Applies from<input id="be-from" type="month" value="${cur.slice(0, 7)}"></label>
-        </div>
-        <div class="actions">
-          <button type="button" id="be-avg" class="small-btn">Use 3-mo avg</button>
-          <button type="button" id="be-cancel">Cancel</button>
-          <button type="button" id="be-save" class="primary">Save</button>
-        </div>
-        <p id="be-msg" class="small error" role="alert"></p>
-        <h3>Last 12 months</h3>
-        <div class="be-months">${st.months.map(x => `<div class="be-m${x.actual > x.budget ? ' over' : ''}">
-          <span>${fmtMonthHeading(x.month)}</span><span>${amtHtml(x.actual, 0)}</span><span class="muted">of ${fmtAmount(x.budget, 0)}</span></div>`).join('')}</div>
-      </div>`;
-    }
-    return `<div class="be-row${cat === openBudgetCat ? ' open' : ''}" data-cat="${esc(cat)}">
-      <div class="be-top"><span class="be-cat">${esc(cat)}</span><span class="be-amt">${fmtAmount(b, 0)}</span>
-        <button type="button" class="small-btn be-edit">${cat === openBudgetCat ? 'Close' : 'Edit'}</button></div>
-      <div class="be-sub">last mo <b${hi(st.last)}>${fmtAmount(st.last, 0)}</b> · 3-mo <b${hi(st.avg3)}>${fmtAmount(st.avg3, 0)}</b> · 12-mo <b${hi(st.avg12)}>${fmtAmount(st.avg12, 0)}</b></div>
-      ${editor}
+    return `<div class="be-sub">last mo <b${hi(st.last)}>${fmtAmount(st.last, 0)}</b> · 3-mo <b${hi(st.avg3)}>${fmtAmount(st.avg3, 0)}</b> · 12-mo <b${hi(st.avg12)}>${fmtAmount(st.avg12, 0)}</b></div>`;
+  };
+  $('#page-title').textContent = openBudgetCat ? openBudgetCat : PAGE_TITLES.budgets;
+
+  // One category on its own page: budget, change form, last 12 months
+  if (openBudgetCat) {
+    const cat = openBudgetCat, st = catStats(cat, spent), b = budgetFor(cat, cur);
+    $('#be-list').innerHTML = `<div class="be-detail">
+      <button type="button" id="be-back" class="be-back">‹ All budgets</button>
+      <div class="be-head"><span>Budget now</span><span class="be-amt">${fmtAmount(b, 0)}</span></div>
+      ${avgLine(st, b)}
+      <div class="be-form">
+        <label>New monthly budget<input id="be-amount" name="budget" inputmode="decimal" value="${Math.round(b)}"></label>
+        <label>Applies from<input id="be-from" name="from" type="month" value="${cur.slice(0, 7)}"></label>
+      </div>
+      <div class="actions">
+        <button type="button" id="be-cancel">Cancel</button>
+        <button type="button" id="be-save" class="primary">Save</button>
+      </div>
+      <p id="be-msg" class="small error" role="alert"></p>
+      <h3>Last 12 months</h3>
+      <div class="be-months">${st.months.map(x => `<div class="be-m${x.actual > x.budget ? ' over' : ''}">
+        <span>${fmtMonthHeading(x.month)}</span><span>${amtHtml(x.actual, 0)}</span><span class="muted">of ${fmtAmount(x.budget, 0)}</span></div>`).join('')}</div>
     </div>`;
-  }).join('');
+    return;
+  }
+
+  // All 13 categories
+  $('#be-list').innerHTML = `<div class="be-all">${cats.map(cat => {
+    const st = catStats(cat, spent), b = budgetFor(cat, cur);
+    return `<div class="be-row" data-cat="${esc(cat)}">
+      <div class="be-top"><span class="be-cat">${esc(cat)}</span><span class="be-amt">${fmtAmount(b, 0)}</span>
+        <button type="button" class="small-btn be-edit">Edit</button></div>
+      ${avgLine(st, b)}
+    </div>`;
+  }).join('')}</div>`;
 }
 async function saveBudget() {
   const cat = openBudgetCat;
@@ -622,11 +632,11 @@ async function uploadLines() {
 
 /* ---------- History page ---------- */
 const rowKey = r => (r.pending ? `cid:${r.client_id}` : `id:${r.id}`);
-function rowHtml(r, showDate = false) {
+function rowHtml(r, showDate = false, dp = 2) {
   const sub = [showDate ? fmtDate(r.month) : '', r.comment].filter(Boolean).map(esc).join(' · ');
   return `<div class="row${r.pending ? ' pending' : ''}" data-key="${esc(rowKey(r))}" role="button" tabindex="0">
     <span class="r-cat">${esc(r.category)}</span>
-    <span class="r-amt">${amtHtml(r.amount)}</span>
+    <span class="r-amt">${amtHtml(r.amount, dp)}</span>
     ${sub ? `<span class="r-sub">${sub}</span>` : ''}
   </div>`;
 }
@@ -677,10 +687,10 @@ function renderFilter() {
 
   const hits = filteredRows();
   const total = hits.reduce((s, r) => s + r.amount, 0);
-  $('#f-summary').innerHTML = `${hits.length} item${hits.length === 1 ? '' : 's'} · total ${amtHtml(total)}`;
-  $('#f-list').innerHTML = hits.slice(0, FILTER_SHOW).map(r => rowHtml(r, true)).join('');
+  $('#f-summary').innerHTML = `${hits.length} item${hits.length === 1 ? '' : 's'} · total ${amtHtml(total, 0)}`;
+  $('#f-list').innerHTML = hits.slice(0, FILTER_SHOW).map(r => rowHtml(r, true, 0)).join('');
   $('#f-more').hidden = hits.length <= FILTER_SHOW;
-  $('#f-more').textContent = `Showing the newest ${FILTER_SHOW} of ${hits.length}. Narrow the filters to see more — the total and Copy for Excel include all ${hits.length}.`;
+  $('#f-more').textContent = `Showing the newest ${FILTER_SHOW} of ${hits.length}. Narrow the filters to see more — the total and Copy include all ${hits.length}.`;
   $('#f-copy').disabled = !hits.length;
 }
 const FILTER_SHOW = 300;
@@ -748,7 +758,7 @@ async function copyForExcel() {
     ...filteredRows().map(r => [fmtDate(r.month), clean(r.category), r.amount.toFixed(2), clean(r.comment)].join('\t'))].join('\r\n');
   try { await navigator.clipboard.writeText(tsv); $('#f-copy').textContent = 'Copied ✓'; }
   catch { $('#f-copy').textContent = 'Copy failed'; }
-  setTimeout(() => { $('#f-copy').textContent = 'Copy for Excel'; }, 2500);
+  setTimeout(() => { $('#f-copy').textContent = 'Copy'; }, 2500);
 }
 
 /* ---------- Import page ---------- */
@@ -868,11 +878,9 @@ function init() {
 
   initSwipe();
   $('#be-list').addEventListener('click', e => {
-    const row = e.target.closest('.be-row');
-    if (!row) return;
-    if (e.target.closest('.be-edit')) { openBudgetCat = openBudgetCat === row.dataset.cat ? null : row.dataset.cat; renderBudgetEditor(); }
-    if (e.target.closest('#be-cancel')) { openBudgetCat = null; renderBudgetEditor(); }
-    if (e.target.closest('#be-avg')) $('#be-amount').value = Math.round(catStats(openBudgetCat, spending()).avg3);
+    const edit = e.target.closest('.be-edit');
+    if (edit) { openBudgetCat = edit.closest('.be-row').dataset.cat; renderBudgetEditor(); window.scrollTo(0, 0); }
+    if (e.target.closest('#be-cancel, #be-back')) { openBudgetCat = null; renderBudgetEditor(); window.scrollTo(0, 0); }
     if (e.target.closest('#be-save')) saveBudget();
   });
   $('#history-list').addEventListener('toggle', e => fillMonth(e.target), true);

@@ -203,7 +203,11 @@ button.danger { color: var(--error); border-color: var(--error); }
 #edit-dlg .entry-grid { grid-template-columns: 108px minmax(0, 1fr); grid-template-areas: "month month" "type amount"; }
 
 /* Edit budgets */
-#be-list { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; }
+.be-all, .be-detail { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; }
+.be-detail { padding: 12px 14px; display: grid; gap: 12px; }
+.be-back { justify-self: start; min-height: 36px; padding: 4px 10px; border: none; background: transparent; color: var(--accent); font-weight: 600; }
+.be-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 18px; font-weight: 600; }
+.be-detail h3 { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
 .be-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .be-row:last-child { border-bottom: none; }
 .be-top { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; font-weight: 600; }
@@ -211,10 +215,8 @@ button.danger { color: var(--error); border-color: var(--error); }
 .be-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .be-sub b { font-weight: 600; color: var(--text); }
 .be-sub b.over, .be-m.over span:nth-child(2) { color: var(--b-over); }
-.be-editor { margin-top: 10px; display: grid; gap: 10px; }
 .be-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .be-form label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
-.be-editor h3 { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
 .be-months { display: grid; }
 .be-m { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 .be-m span:nth-child(2) { text-align: right; }

@@ -273,8 +273,10 @@ def check():
         page.select_option("#f-month", "2026-11-01")
         summ = page.text_content("#f-summary")
         exp = [r for r in mock.rows if r["category"] == "Beer" and r["month"] == "2026-11-01"]
-        exp_total = f"{sum(r['amount'] for r in exp):,.2f}"
+        exp_total = f"{int(abs(sum(r['amount'] for r in exp)) + 0.5):,}"  # round half up, like the app
         rec("filter category + month", summ.startswith(f"{len(exp)} item") and exp_total in summ, f"{summ} (expected {len(exp)}, {exp_total})")
+        rec("filter: whole baht, button says Copy", ".00" not in summ and page.text_content("#f-copy") == "Copy"
+            and ".00" not in page.text_content("#f-list"), summ)
         rec("amounts shown in baht", "฿" in summ)
         page.select_option("#f-month", "")
         page.screenshot(path=str(SHOTS / "05-filter.png"))
@@ -420,9 +422,12 @@ def check():
         box = page.locator("#entry .l-comment").bounding_box()
         swipe(box["x"] + box["width"] - 10, 40, y=box["y"] + box["height"] / 2)
         rec("swipe starting on a text box is ignored", page.text_content("#page-title") == "Add expenses")
-        for _ in range(3):
-            swipe(330, 60)
-        rec("swipe through to Budget", page.text_content("#page-title") == "Budget")
+        swipe(330, 60); swipe(330, 60)
+        rec("swipe order Add > History > Budget", page.text_content("#page-title") == "Budget")
+        swipe(330, 60)
+        rec("then Filter (last)", page.text_content("#page-title") == "Filter")
+        rec("tab buttons in order Add, History, Budget, Filter",
+            page.eval_on_selector_all(".tabs button", "bs => bs.map(b => b.textContent)") == ["Add", "History", "Budget", "Filter"])
         cdp.send("Emulation.setTouchEmulationEnabled", {"enabled": False})
 
         # Screen sizes
@@ -454,16 +459,18 @@ def check():
         page.wait_for_selector("#be-list .be-row")
         rec("edit list has the 13 categories with averages", page.locator("#be-list .be-row").count() == 13
             and "3-mo" in page.text_content("#be-list .be-row:first-child"))
+        page.screenshot(path=str(SHOTS / "11-edit-budgets-list.png"))
         page.click("#be-list .be-row:first-child .be-edit")
-        rec("Edit shows the last 12 months", page.locator("#be-list .be-m").count() == 12)
-        page.screenshot(path=str(SHOTS / "11-edit-budget.png"), full_page=True)
-        page.click("#be-avg")
-        months3 = ["2026-10-01", "2026-09-01", "2026-08-01"]
-        exp_avg = round(sum(r["amount"] for r in mock.rows if r["category"] == "Groceries (food)" and r["month"] in months3) / 3)
-        rec("Use 3-mo avg fills the average", page.input_value("#be-amount") == str(exp_avg), f"{page.input_value('#be-amount')} vs {exp_avg}")
+        rec("Edit opens a page for just that category", page.locator("#be-list .be-row").count() == 0
+            and page.text_content("#page-title") == "Groceries (food)" and page.locator("#be-list .be-m").count() == 12)
+        rec("no 'use average' button", page.locator("#be-avg").count() == 0)
+        page.screenshot(path=str(SHOTS / "12-edit-budget-one.png"))
+        page.click("#be-back")
+        rec("back returns to all 13", page.locator("#be-list .be-row").count() == 13)
+        page.click("#be-list .be-row:first-child .be-edit")
         page.fill("#be-amount", "16000")
         page.click("#be-save")
-        page.wait_for_function("!document.querySelector('#be-list .be-editor')")
+        page.wait_for_function("!document.querySelector('#be-list .be-detail')")
         saved = [b for b in mock.budgets if b["category"] == "Groceries (food)"]
         rec("budget change saved with its start month", any(b["amount"] == 16000 and b["from_month"] == "2026-11-01" for b in saved), str(saved))
         page.click(".tabs button[data-page=budget]")

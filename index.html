@@ -85,7 +85,7 @@
         </div>
         <div class="filter-summary">
           <span id="f-summary"></span>
-          <button id="f-copy" type="button" class="small-btn">Copy for Excel</button>
+          <button id="f-copy" type="button" class="small-btn" title="Copy the filtered rows to paste into Excel">Copy</button>
         </div>
         <div id="f-list"></div>
         <p id="f-more" class="muted small" hidden></p>
@@ -105,8 +105,6 @@
 
       <!-- Edit budgets (nigel only) -->
       <div id="page-budgets" class="page" hidden>
-        <p class="small muted">Monthly budgets. A change applies from the month you pick onwards; earlier months keep their old budget.
-          Averages are of completed months.</p>
         <p id="be-info" class="small" role="status"></p>
         <div id="be-list"></div>
       </div>
@@ -127,8 +125,8 @@
     <nav class="tabs">
       <button data-page="add" class="active">Add</button>
       <button data-page="history">History</button>
-      <button data-page="filter">Filter</button>
       <button data-page="budget">Budget</button>
+      <button data-page="filter">Filter</button>
     </nav>
   </section>
 
