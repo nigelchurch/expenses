@@ -25,8 +25,9 @@ If it does pause, click *Restore* in the dashboard (no data lost).
 
 ## Using it
 
-- **Add** – one card per expense (month, amount, category, comment). *+ New line* for more, *Upload expenses* sends them all.
-  Negative amounts are allowed (e.g. Investment +/-). With no signal, they're saved on the phone and upload automatically later.
+- **Add** – fill in the entry (month, amount, category, comment). *+ New line* moves it to the list below
+  (newest first, *Edit* to change); *Upload expenses* sends the list.
+  **Sign:** spending = positive, money in / repayment = negative (the **+/−** button flips it). With no signal, they're saved on the phone and upload automatically later.
 - **History** – everything, grouped by month with totals; current month open, others collapsed. Refreshes on every open/connection.
 - **Filter** – category and/or month, total, and *Copy for Excel* (tab-separated; dates as `1 NOV 26`).
 - **⋮ menu → Import history** – paste rows from Excel: Date, Category, Amount, Comment. Pasting the same rows twice doesn't duplicate.
