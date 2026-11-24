@@ -185,6 +185,14 @@ button.danger { color: var(--error); border-color: var(--error); }
 .b-sub { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 #b-other { margin-top: 14px; }
 #b-other h3 { font-size: 14px; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+.b-row[data-cat], .b-orow { cursor: pointer; }
+.b-row[data-cat]:hover, .b-orow:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.b-others { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; }
+.b-orow { display: flex; justify-content: space-between; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); font-weight: 500; }
+.b-orow:last-child { border-bottom: none; }
+.cm-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 4px 2px 10px; font-weight: 600; }
+#cm-total { color: var(--muted); font-weight: 400; font-size: 14px; }
+.cm-list { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
 
 #imp-result table { border-collapse: collapse; width: 100%; margin-top: 8px; }
 #imp-result td { border-bottom: 1px solid var(--line); padding: 4px; vertical-align: top; }

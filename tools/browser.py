@@ -323,6 +323,22 @@ def check():
         page.click("#b-prev")
         rec("budget month back to October", page.text_content("#b-month") == "October 2026")
         page.click("#b-next")
+        # tap a category: its line items for that month, editable
+        page.click("#b-list .b-row:first-child")
+        n_groc = sum(1 for r in mock.rows if r["month"] == "2026-11-01" and r["category"] == "Groceries (food)")
+        rec("tap a budget category: its items this month", page.text_content("#page-title") == "Groceries (food)"
+            and page.locator("#cm-list .row").count() == n_groc and page.text_content("#cm-month") == "November 2026",
+            f"{page.locator('#cm-list .row').count()} vs {n_groc}")
+        page.screenshot(path=str(SHOTS / "18-category-month.png"))
+        page.click("#cm-list .row:first-child")
+        rec("items there are editable", page.is_visible("#edit-dlg"))
+        page.click("#e-cancel")
+        page.click("#cm-back")
+        rec("back to Budget", page.text_content("#page-title") == "Budget")
+        page.click(".b-orow:has-text('Planned expenses')")
+        rec("unbudgeted categories open too", page.text_content("#page-title") == "Planned expenses"
+            and page.locator("#cm-list .row").count() >= 1)
+        page.click("#cm-back")
         page.click(".tabs button[data-page=add]")
         lbl = page.eval_on_selector("#entry .l-cat", "s => s.options[s.selectedIndex].textContent")
         rec("Add drop-down shows % used", lbl == f"Groceries (food) · {exp_pct}%", lbl)

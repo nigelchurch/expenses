@@ -6,7 +6,7 @@ const BASE = CFG.SUPABASE_URL.replace(/\/+$/, '');
 const KEY = CFG.SUPABASE_ANON_KEY;
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const PAGE_TITLES = { add: 'Add expenses', history: 'History', filter: 'Filter', budget: 'Budget', budgets: 'Edit budgets', kitty: "Jop's kitty", import: 'Import history' };
+const PAGE_TITLES = { add: 'Add expenses', history: 'History', filter: 'Filter', budget: 'Budget', budgets: 'Edit budgets', kitty: "Jop's kitty", catmonth: '', import: 'Import history' };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -252,7 +252,7 @@ function showApp() {
 }
 function showPage(page) {
   currentPage = page;
-  for (const p of ['add', 'history', 'filter', 'budget', 'budgets', 'kitty', 'import']) $(`#page-${p}`).hidden = p !== page;
+  for (const p of ['add', 'history', 'filter', 'budget', 'budgets', 'kitty', 'catmonth', 'import']) $(`#page-${p}`).hidden = p !== page;
   $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   $('#page-title').textContent = PAGE_TITLES[page];
   $('#menu').hidden = true;
@@ -266,6 +266,7 @@ function renderPage(p) {
   if (p === 'budget') renderBudget();
   if (p === 'budgets') renderBudgetEditor();
   if (p === 'kitty') renderKitty();
+  if (p === 'catmonth') renderCatMonth();
   if (p === 'add') updateCatLabels(form());
 }
 
@@ -367,6 +368,20 @@ function updateCatLabels(node, spent = spending()) {
   }
 }
 let budgetMonth = currentMonthIso();
+
+/* ---------- One category in one month (tap a category on the Budget tab) ---------- */
+let cmCat = null;
+function openCatMonth(cat) { cmCat = cat; showPage('catmonth'); }
+function renderCatMonth() {
+  if (!cmCat) return;
+  $('#page-title').textContent = cmCat;
+  const rows = allRows().filter(r => r.category === cmCat && r.month === budgetMonth);
+  const total = rows.reduce((t, r) => t + r.amount, 0);
+  const budget = CFG.BUDGETS[cmCat] ? budgetFor(cmCat, budgetMonth) : 0;
+  $('#cm-month').textContent = fmtMonthHeading(budgetMonth);
+  $('#cm-total').innerHTML = `${rows.length} item${rows.length === 1 ? '' : 's'} · ${amtHtml(total, 0)}${budget ? ` of ${fmtAmount(budget, 0)}` : ''}`;
+  $('#cm-list').innerHTML = rows.map(r => rowHtml(r, false, 2, true)).join('') || '<p class="muted" style="padding:12px 0">Nothing this month.</p>';
+}
 
 /* ---------- Budgets with history (database table "budgets") ---------- */
 // Each row: { category, amount, from_month }. A month uses the latest row with from_month <= that month.
@@ -493,7 +508,7 @@ function renderBudget() {
     const over = spent > budget;
     const state = over ? 'over' : pct >= 80 ? 'warn' : '';
     const left = budget - spent;
-    html += `<div class="b-row ${state}" title="${esc(cat)}: ${fmtAmount(spent, 0)} of ${fmtAmount(budget, 0)}">
+    html += `<div class="b-row ${state}" data-cat="${esc(cat)}" role="button" tabindex="0" title="${esc(cat)}: ${fmtAmount(spent, 0)} of ${fmtAmount(budget, 0)}">
       <div class="b-top"><span>${esc(cat)}</span><span class="b-pct">${over ? '▲ ' : ''}${pct}%</span></div>
       <div class="b-track"><div class="b-fill" style="width:${Math.max(0, Math.min(pct, 100))}%"></div></div>
       <div class="b-sub">${amtHtml(spent, 0)} of ${fmtAmount(budget, 0)} · ${left >= 0 ? `${fmtAmount(left, 0)} left` : `over by ${fmtAmount(-left, 0)}`}</div>
@@ -503,7 +518,8 @@ function renderBudget() {
   $('#b-total').textContent = `${fmtAmount(totSpent, 0)} of ${fmtAmount(totBudget, 0)} (${pctOf(totSpent, totBudget)}%)`;
   const others = Object.entries(used).filter(([c]) => !CFG.BUDGETS[c]);
   $('#b-other').innerHTML = others.length
-    ? `<h3>No budget set</h3><div id="f-list">${others.map(([c, v]) => rowHtml({ category: c, amount: v, comment: '' }).replace('role="button" tabindex="0"', '')).join('')}</div>`
+    ? `<h3>No budget set</h3><div class="b-others">${others.map(([c, v]) => `<div class="b-orow" data-cat="${esc(c)}" role="button" tabindex="0">
+        <span>${esc(c)}</span><span>${amtHtml(v, 0)}</span></div>`).join('')}</div>`
     : '';
 }
 /* ---------- Jop's kitty ---------- */
@@ -811,12 +827,13 @@ async function uploadLines() {
 
 /* ---------- History page ---------- */
 const rowKey = r => (r.pending ? `cid:${r.client_id}` : `id:${r.id}`);
-function rowHtml(r, showDate = false, dp = 2) {
+// hideCat: on a single-category page, show the comment as the title instead of repeating the category
+function rowHtml(r, showDate = false, dp = 2, hideCat = false) {
   const orig = r.currency && r.currency !== 'THB' && r.orig_amount != null ? fmtOrig(Number(r.orig_amount), r.currency) : '';
-  const sub = [showDate ? fmtDate(r.month) : '', orig, r.comment].filter(Boolean).map(esc).join(' · ');
+  const sub = [showDate ? fmtDate(r.month) : '', orig, hideCat ? '' : r.comment].filter(Boolean).map(esc).join(' · ');
   const note = kittyNote(r);
   return `<div class="row${r.pending ? ' pending' : ''}${note ? ' has-note' : ''}" data-key="${esc(rowKey(r))}" role="button" tabindex="0">
-    <span class="r-cat">${esc(r.category)}</span>
+    <span class="r-cat">${esc(hideCat ? (r.comment || '(no comment)') : r.category)}</span>
     <span class="r-amt">${amtHtml(r.amount, dp)}</span>
     ${sub ? `<span class="r-sub">${sub}</span>` : ''}${note}
   </div>`;
@@ -1060,6 +1077,10 @@ function init() {
   $('#f-month').addEventListener('change', renderFilter);
   $('#f-copy').addEventListener('click', copyForExcel);
   $('#b-prev').addEventListener('click', () => { budgetMonth = shiftMonth(budgetMonth, -1); renderBudget(); });
+  const openCat = e => { const el = e.target.closest('[data-cat]'); if (el) openCatMonth(el.dataset.cat); };
+  $('#page-budget').addEventListener('click', openCat);
+  $('#page-budget').addEventListener('keydown', e => { if (e.key === 'Enter') openCat(e); });
+  $('#cm-back').addEventListener('click', () => showPage('budget'));
   $('#b-next').addEventListener('click', () => { budgetMonth = shiftMonth(budgetMonth, 1); renderBudget(); });
 
   initSwipe();
@@ -1074,7 +1095,7 @@ function init() {
     if (e.target.closest('#be-save')) saveBudget();
   });
   $('#history-list').addEventListener('toggle', e => fillMonth(e.target), true);
-  for (const list of ['#history-list', '#f-list']) {
+  for (const list of ['#history-list', '#f-list', '#cm-list']) {
     $(list).addEventListener('click', e => { const row = e.target.closest('.row'); if (row) openEditor(row.dataset.key); });
     $(list).addEventListener('keydown', e => { const row = e.target.closest('.row'); if (row && e.key === 'Enter') openEditor(row.dataset.key); });
   }
