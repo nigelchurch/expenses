@@ -222,6 +222,25 @@ def check():
         # Add: one entry form; "+ New line" moves it into a list below; upload sends list + form
         n0 = len(mock.rows)
         rec("form starts on Groceries", page.input_value("#entry .l-cat") == "Groceries (food)")
+        # Default comments: follow the category, never overwrite typed text
+        want = {"Groceries (food)": "around nova", "Eating Out": "in bangkok", "Beer": "tins around nova", "Cat expenses": "pet food",
+                "Health expenses": "general meds", "Quintara": "mortgage", "Pocket Money (JOP)": "salary",
+                "Pocket Money (NIG)": "lazada", "Car Expenses": "fuel"}
+        rec("new expense starts with the Groceries comment", page.input_value("#entry .l-comment") == "around nova")
+        got = {}
+        for c in page.eval_on_selector_all("#entry .l-cat option", "os => os.map(o => o.value)"):
+            page.select_option("#entry .l-cat", c); got[c] = page.input_value("#entry .l-comment")
+        rec("each category fills its own comment (others empty)", all(v == want.get(c, "") for c, v in got.items()) and want.keys() <= got.keys(), str(got))
+        page.fill("#entry .l-comment", "my own text"); page.select_option("#entry .l-cat", "Beer")
+        rec("typed comment kept when category changes", page.input_value("#entry .l-comment") == "my own text")
+        page.fill("#entry .l-comment", ""); page.select_option("#entry .l-cat", "Groceries (food)")
+        rec("emptied comment refills on category change", page.input_value("#entry .l-comment") == "around nova")
+        page.click("#add-line")
+        rec("default comment alone isn't treated as an entry", page.locator("#staged .staged").count() == 0 and page.locator("#entry.invalid").count() == 0)
+        page.fill("#entry .l-amount", "5"); page.fill("#entry .l-comment", ""); page.click("#add-line")
+        page.click("#staged .staged:first-child .s-edit")
+        rec("comment left empty on purpose stays empty when edited", page.input_value("#entry .l-comment") == "")
+        page.fill("#entry .l-amount", ""); page.select_option("#entry .l-cat", "Beer"); page.select_option("#entry .l-cat", "Groceries (food)")
         order = page.eval_on_selector_all("#entry .l-cat option", "os => os.map(o => o.value)")
         rec("drop-down in new order", order[:3] == ["Groceries (food)", "Eating Out", "Domestic"] and order[10] == "Pocket Money (JOP)", str(order))
         page.fill("#entry .l-amount", "54.20"); page.fill("#entry .l-comment", "Tesco weekly shop")
@@ -266,7 +285,8 @@ def check():
         page.fill("#entry .l-comment", "")
         page.select_option("#entry .l-cat", "Beer")  # blank form, category changed
         page.reload(); page.wait_for_selector("#app:not([hidden])")
-        rec("blank form back to Groceries after reopening", page.input_value("#entry .l-cat") == "Groceries (food)")
+        rec("blank form back to Groceries after reopening", page.input_value("#entry .l-cat") == "Groceries (food)"
+            and page.input_value("#entry .l-comment") == "around nova")
 
         # History
         total_rows = len(mock.rows)
@@ -594,6 +614,13 @@ def check():
         rec("new budget from Nov; October keeps the old one", "of ฿16,000" in nov and "of ฿14,000" in octo, f"{nov[-40:]} | {octo[-40:]}")
         # Kitty transfer by nigel; nigel's own entries don't touch the kitty
         before_k = kitty_expected()
+        page.click(".tabs button[data-page=add]")
+        rec("nigel's form opens on Pocket Money (NIG) with 'lazada'", page.input_value("#entry .l-cat") == "Pocket Money (NIG)"
+            and page.input_value("#entry .l-comment") == "lazada")
+        page.screenshot(path=str(SHOTS / "16-add-nigel.png"))
+        page.reload(); page.wait_for_selector("#app:not([hidden])")
+        rec("...and again after reopening", page.input_value("#entry .l-cat") == "Pocket Money (NIG)"
+            and page.input_value("#entry .l-comment") == "lazada")
         page.click(".tabs button[data-page=add]")
         page.fill("#entry .l-amount", "500"); page.fill("#entry .l-comment", "nigel lunch"); page.click("#upload")
         page.wait_for_function("document.querySelector('#add-msg').textContent.includes('uploaded')")

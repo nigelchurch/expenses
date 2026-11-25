@@ -733,10 +733,19 @@ function categoryOptions(select, selected = '') {
     select.append(o);
   }
 }
+const defaultCategory = () => CFG.USER_DEFAULT_CATEGORY?.[session?.name.trim().toLowerCase()] || CFG.DEFAULT_CATEGORY;
+const defaultComment = cat => CFG.DEFAULT_COMMENTS?.[cat] || '';
+let formCat = ''; // category the form's default comment belongs to
+// Category changed: swap in its default comment, unless something else was typed
+function categoryChanged() {
+  const f = form(), box = $('.l-comment', f), typed = box.value.trim();
+  if (!typed || typed === defaultComment(formCat)) box.value = defaultComment($('.l-cat', f).value);
+  formCat = $('.l-cat', f).value;
+}
 function setForm(d = {}) {
   const f = form();
   $('.l-month', f).value = d.month || $('.l-month', f).value || currentMonthIso().slice(0, 7);
-  $('.l-cat', f).value = d.category || CFG.DEFAULT_CATEGORY;
+  $('.l-cat', f).value = formCat = d.category || defaultCategory();
   const foreign = d.currency && d.currency !== 'THB' && d.orig_amount != null;
   const amt = String(foreign ? d.orig_amount : (d.amount ?? '')).trim();
   setType($('.l-type', f), d.type || (amt.startsWith('-') ? 'income' : 'expense'));
@@ -744,7 +753,7 @@ function setForm(d = {}) {
   $('.l-cur', f).value = d.currency || lastCurrency();
   if (!$('.l-cur', f).value) $('.l-cur', f).value = 'THB';
   updateFx();
-  $('.l-comment', f).value = d.comment ?? '';
+  $('.l-comment', f).value = d.comment ?? defaultComment(formCat);
   $('.l-kittybox', f).checked = d.kitty ?? kittyDefault();
   f.classList.remove('invalid');
   updateCatLabels(f);
@@ -761,7 +770,8 @@ function readForm() {
     kitty: $('.l-kittybox', f).checked,
   };
 }
-const isBlank = d => !d.amount && !d.comment; // category is always pre-filled, so it doesn't count
+// Category and its default comment are pre-filled, so they don't count
+const isBlank = d => !d.amount && (!d.comment || d.comment === defaultComment(d.category));
 const isValid = d => /^\d{4}-\d{2}$/.test(d.month) && !!d.category && !Number.isNaN(parseAmount(d.amount));
 function saveDraft() { store.set('draft', { form: readForm(), staged }); }
 
@@ -1085,6 +1095,7 @@ function init() {
 
   const f = form();
   categoryOptions($('.l-cat', f), CFG.DEFAULT_CATEGORY);
+  $('.l-cat', f).addEventListener('change', categoryChanged); // before saveDraft below
   $('#add-line').addEventListener('click', stageForm);
   $('#upload').addEventListener('click', uploadLines);
   f.addEventListener('input', saveDraft);

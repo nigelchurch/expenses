@@ -26,6 +26,21 @@ window.APP_CONFIG = {
 
   // New lines start on this category (saves a tap most of the time)
   DEFAULT_CATEGORY: 'Groceries (food)',
+  // ...except for these login names (lower case)
+  USER_DEFAULT_CATEGORY: { nigel: 'Pocket Money (NIG)' },
+
+  // The comment a new expense starts with, by category (all users)
+  DEFAULT_COMMENTS: {
+    'Groceries (food)': 'around nova',
+    'Eating Out': 'in bangkok',
+    'Beer': 'tins around nova',
+    'Cat expenses': 'pet food',
+    'Health expenses': 'general meds',
+    'Quintara': 'mortgage',
+    'Pocket Money (JOP)': 'salary',
+    'Pocket Money (NIG)': 'lazada',
+    'Car Expenses': 'fuel',
+  },
 
   // The main (budgeted) categories and their starting budgets. The live budgets, with history,
   // are in the database (supabase/budgets.sql); these are only used until it has loaded.
