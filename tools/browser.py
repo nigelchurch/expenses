@@ -16,7 +16,7 @@ SHOTS = Path(__file__).resolve().parent / "screenshots"
 PORT = 8765
 MOCK = "https://mock-project.supabase.co"
 APP_FILES = ["./", "index.html", "styles.css", "app.js", "config.js", "manifest.webmanifest",
-             "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png"]
+             "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/nova.png"]
 SIZES = {"iphone13": (390, 844), "fold7-outer": (411, 960), "fold7-inner": (750, 832), "fold5-outer": (344, 882), "desktop": (1100, 800)}
 
 
@@ -206,6 +206,7 @@ def check():
 
         page.goto(base)
         page.wait_for_selector("#login:not([hidden])")
+        page.wait_for_function("document.querySelector('#login .maker').naturalWidth > 0")
         page.screenshot(path=str(SHOTS / "01-login.png"))
         vp = page.get_attribute('meta[name="viewport"]', "content")
         rec("zoom turned off (page setting + touch rule)", "user-scalable=no" in vp and "maximum-scale=1" in vp
@@ -619,6 +620,20 @@ def check():
             and page.input_value("#entry .l-comment") == "lazada")
         page.screenshot(path=str(SHOTS / "16-add-nigel.png"))
         page.reload(); page.wait_for_selector("#app:not([hidden])")
+        page.wait_for_load_state("load"); page.wait_for_timeout(500)
+        rec("logo not loaded at launch", not page.evaluate("performance.getEntriesByType('resource').some(r => r.name.includes('nova.png'))"))
+        for name, (w, h) in SIZES.items():
+            page.set_viewport_size({"width": w, "height": h})
+            page.click("#menu-btn")
+            page.wait_for_function("document.querySelector('#menu .maker').naturalWidth > 0")
+            box = page.locator("#menu").bounding_box()
+            rec(f"menu with logo fits on {name}", box["y"] + box["height"] <= h and box["x"] >= 0, str(box))
+            page.screenshot(path=str(SHOTS / f"size-{name}-menu.png"))
+            page.click("#menu-btn")
+        ctx.set_offline(True); page.reload(); page.wait_for_selector("#app:not([hidden])"); page.click("#menu-btn")
+        page.wait_for_function("document.querySelector('#menu .maker').naturalWidth > 0")
+        rec("logo shows offline", True)
+        ctx.set_offline(False); page.reload(); page.wait_for_selector("#app:not([hidden])")
         rec("...and again after reopening", page.input_value("#entry .l-cat") == "Pocket Money (NIG)"
             and page.input_value("#entry .l-comment") == "lazada")
         page.click(".tabs button[data-page=add]")
