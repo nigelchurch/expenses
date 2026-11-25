@@ -227,21 +227,31 @@ def check():
         want = {"Groceries (food)": "around nova", "Eating Out": "in bangkok", "Beer": "tins around nova", "Cat expenses": "pet food",
                 "Health expenses": "general meds", "Quintara": "mortgage", "Pocket Money (JOP)": "salary",
                 "Pocket Money (NIG)": "lazada", "Car Expenses": "fuel"}
-        rec("new expense starts with the Groceries comment", page.input_value("#entry .l-comment") == "around nova")
+        hint = lambda: page.get_attribute("#entry .l-comment", "placeholder")
+        typed = lambda: page.input_value("#entry .l-comment")
+        GENERIC = "Comment / detail"
+        rec("Groceries default comment shown greyed, box itself empty", hint() == "around nova" and typed() == "")
         got = {}
         for c in page.eval_on_selector_all("#entry .l-cat option", "os => os.map(o => o.value)"):
-            page.select_option("#entry .l-cat", c); got[c] = page.input_value("#entry .l-comment")
-        rec("each category fills its own comment (others empty)", all(v == want.get(c, "") for c, v in got.items()) and want.keys() <= got.keys(), str(got))
+            page.select_option("#entry .l-cat", c); got[c] = hint()
+        rec("each category shows its own default (others the usual hint)", all(v == want.get(c, GENERIC) for c, v in got.items()) and want.keys() <= got.keys(), str(got))
+        grey = page.eval_on_selector("#entry .l-comment", "e => [getComputedStyle(e, '::placeholder').color, getComputedStyle(e).color]")
+        rec("default is a different (greyer) colour than typed text", grey[0] != grey[1], str(grey))
         page.fill("#entry .l-comment", "my own text"); page.select_option("#entry .l-cat", "Beer")
-        rec("typed comment kept when category changes", page.input_value("#entry .l-comment") == "my own text")
-        page.fill("#entry .l-comment", ""); page.select_option("#entry .l-cat", "Groceries (food)")
-        rec("emptied comment refills on category change", page.input_value("#entry .l-comment") == "around nova")
+        rec("typed comment kept when category changes", typed() == "my own text")
+        page.fill("#entry .l-comment", "")
+        rec("clearing it brings the greyed default back", hint() == "tins around nova" and typed() == "")
+        page.click("#entry .l-type")
+        rec("no default comment on income", hint() == GENERIC)
+        page.click("#entry .l-type")
+        rec("default back on expense", hint() == "tins around nova")
         page.click("#add-line")
         rec("default comment alone isn't treated as an entry", page.locator("#staged .staged").count() == 0 and page.locator("#entry.invalid").count() == 0)
-        page.fill("#entry .l-amount", "5"); page.fill("#entry .l-comment", ""); page.click("#add-line")
+        page.fill("#entry .l-amount", "5"); page.click("#add-line")
+        rec("untouched default is saved with the entry", "tins around nova" in page.text_content("#staged .staged:first-child"))
         page.click("#staged .staged:first-child .s-edit")
-        rec("comment left empty on purpose stays empty when edited", page.input_value("#entry .l-comment") == "")
-        page.fill("#entry .l-amount", ""); page.select_option("#entry .l-cat", "Beer"); page.select_option("#entry .l-cat", "Groceries (food)")
+        rec("editing it shows the default greyed again", hint() == "tins around nova" and typed() == "" and page.input_value("#entry .l-amount") == "5")
+        page.fill("#entry .l-amount", ""); page.select_option("#entry .l-cat", "Groceries (food)")
         order = page.eval_on_selector_all("#entry .l-cat option", "os => os.map(o => o.value)")
         rec("drop-down in new order", order[:3] == ["Groceries (food)", "Eating Out", "Domestic"] and order[10] == "Pocket Money (JOP)", str(order))
         page.fill("#entry .l-amount", "54.20"); page.fill("#entry .l-comment", "Tesco weekly shop")
@@ -287,7 +297,7 @@ def check():
         page.select_option("#entry .l-cat", "Beer")  # blank form, category changed
         page.reload(); page.wait_for_selector("#app:not([hidden])")
         rec("blank form back to Groceries after reopening", page.input_value("#entry .l-cat") == "Groceries (food)"
-            and page.input_value("#entry .l-comment") == "around nova")
+            and hint() == "around nova" and typed() == "")
 
         # History
         total_rows = len(mock.rows)
@@ -617,7 +627,7 @@ def check():
         before_k = kitty_expected()
         page.click(".tabs button[data-page=add]")
         rec("nigel's form opens on Pocket Money (NIG) with 'lazada'", page.input_value("#entry .l-cat") == "Pocket Money (NIG)"
-            and page.input_value("#entry .l-comment") == "lazada")
+            and hint() == "lazada" and typed() == "")
         page.screenshot(path=str(SHOTS / "16-add-nigel.png"))
         page.reload(); page.wait_for_selector("#app:not([hidden])")
         page.wait_for_load_state("load"); page.wait_for_timeout(500)
@@ -635,7 +645,7 @@ def check():
         rec("logo shows offline", True)
         ctx.set_offline(False); page.reload(); page.wait_for_selector("#app:not([hidden])")
         rec("...and again after reopening", page.input_value("#entry .l-cat") == "Pocket Money (NIG)"
-            and page.input_value("#entry .l-comment") == "lazada")
+            and hint() == "lazada" and typed() == "")
         page.click(".tabs button[data-page=add]")
         page.fill("#entry .l-amount", "500"); page.fill("#entry .l-comment", "nigel lunch"); page.click("#upload")
         page.wait_for_function("document.querySelector('#add-msg').textContent.includes('uploaded')")

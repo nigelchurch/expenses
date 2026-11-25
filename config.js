@@ -29,7 +29,7 @@ window.APP_CONFIG = {
   // ...except for these login names (lower case)
   USER_DEFAULT_CATEGORY: { nigel: 'Pocket Money (NIG)' },
 
-  // The comment a new expense starts with, by category (all users)
+  // Greyed default comment for a new expense, by category (all users): saved unless something else is typed
   DEFAULT_COMMENTS: {
     'Groceries (food)': 'around nova',
     'Eating Out': 'in bangkok',

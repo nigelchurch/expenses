@@ -1,5 +1,5 @@
 // Bump VERSION whenever any app file changes so phones pick up the new version.
-const VERSION = 'v33';
+const VERSION = 'v34';
 const CACHE = `expenses-${VERSION}`;
 const FILES = [
   './',
@@ -15,7 +15,8 @@ const FILES = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // 'reload' = straight from the server: GitHub Pages lets browsers reuse files for 10 minutes, which saved old pages
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {

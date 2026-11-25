@@ -734,18 +734,13 @@ function categoryOptions(select, selected = '') {
   }
 }
 const defaultCategory = () => CFG.USER_DEFAULT_CATEGORY?.[session?.name.trim().toLowerCase()] || CFG.DEFAULT_CATEGORY;
-const defaultComment = cat => CFG.DEFAULT_COMMENTS?.[cat] || '';
-let formCat = ''; // category the form's default comment belongs to
-// Category changed: swap in its default comment, unless something else was typed
-function categoryChanged() {
-  const f = form(), box = $('.l-comment', f), typed = box.value.trim();
-  if (!typed || typed === defaultComment(formCat)) box.value = defaultComment($('.l-cat', f).value);
-  formCat = $('.l-cat', f).value;
-}
+// Default comment (expenses only): shown greyed in the empty comment box, saved if nothing is typed
+const defaultComment = d => (d.type === 'income' ? '' : CFG.DEFAULT_COMMENTS?.[d.category] || '');
+function updateCommentHint() { $('.l-comment', form()).placeholder = defaultComment(readForm()) || 'Comment / detail'; }
 function setForm(d = {}) {
   const f = form();
   $('.l-month', f).value = d.month || $('.l-month', f).value || currentMonthIso().slice(0, 7);
-  $('.l-cat', f).value = formCat = d.category || defaultCategory();
+  $('.l-cat', f).value = d.category || defaultCategory();
   const foreign = d.currency && d.currency !== 'THB' && d.orig_amount != null;
   const amt = String(foreign ? d.orig_amount : (d.amount ?? '')).trim();
   setType($('.l-type', f), d.type || (amt.startsWith('-') ? 'income' : 'expense'));
@@ -753,7 +748,9 @@ function setForm(d = {}) {
   $('.l-cur', f).value = d.currency || lastCurrency();
   if (!$('.l-cur', f).value) $('.l-cur', f).value = 'THB';
   updateFx();
-  $('.l-comment', f).value = d.comment ?? defaultComment(formCat);
+  const comment = d.comment ?? '';
+  $('.l-comment', f).value = comment === defaultComment(readForm()) ? '' : comment;
+  updateCommentHint();
   $('.l-kittybox', f).checked = d.kitty ?? kittyDefault();
   f.classList.remove('invalid');
   updateCatLabels(f);
@@ -770,8 +767,7 @@ function readForm() {
     kitty: $('.l-kittybox', f).checked,
   };
 }
-// Category and its default comment are pre-filled, so they don't count
-const isBlank = d => !d.amount && (!d.comment || d.comment === defaultComment(d.category));
+const isBlank = d => !d.amount && !d.comment; // category is always pre-filled, so it doesn't count
 const isValid = d => /^\d{4}-\d{2}$/.test(d.month) && !!d.category && !Number.isNaN(parseAmount(d.amount));
 function saveDraft() { store.set('draft', { form: readForm(), staged }); }
 
@@ -787,7 +783,7 @@ function stageForm() {
   const typed = signed(d.type, parseAmount(d.amount));
   const per = thbPer(d.currency);
   if (!per) { form().classList.add('invalid'); toast(`No ${d.currency} rate yet — connect to the internet once, or use THB.`); return false; }
-  const entry = { id: uuid(), ...d, amount: String(Math.round(typed * per * 100) / 100) };
+  const entry = { id: uuid(), ...d, comment: d.comment || defaultComment(d), amount: String(Math.round(typed * per * 100) / 100) };
   if (d.currency !== 'THB') Object.assign(entry, { orig_amount: typed, fx_rate: Math.round(per * 1e6) / 1e6 });
   else Object.assign(entry, { currency: null });
   staged.unshift(entry);
@@ -1095,7 +1091,7 @@ function init() {
 
   const f = form();
   categoryOptions($('.l-cat', f), CFG.DEFAULT_CATEGORY);
-  $('.l-cat', f).addEventListener('change', categoryChanged); // before saveDraft below
+  $('.l-cat', f).addEventListener('change', updateCommentHint);
   $('#add-line').addEventListener('click', stageForm);
   $('#upload').addEventListener('click', uploadLines);
   f.addEventListener('input', saveDraft);
@@ -1104,7 +1100,7 @@ function init() {
   fillCurrencies($('.l-cur', f));
   $('.l-cur', f).addEventListener('change', () => { store.set('lastCurrency', $('.l-cur', f).value); updateFx(); });
   $('.l-amount', f).addEventListener('input', updateFx);
-  $('.l-type', f).addEventListener('click', () => { toggleType($('.l-type', f)); saveDraft(); });
+  $('.l-type', f).addEventListener('click', () => { toggleType($('.l-type', f)); updateCommentHint(); saveDraft(); });
   $('#staged').addEventListener('click', e => { const b = e.target.closest('.s-edit'); if (b) editStaged(b.closest('.staged').dataset.id); });
   $('#e-type').addEventListener('click', () => toggleType($('#e-type')));
 
