@@ -1,0 +1,65 @@
+# Daily check of Jop's kitty. When it falls below KITTY.LOW (config.js) a push goes to the ntfy topic
+# (secret NTFY_TOPIC) on both phones. It alerts once: no repeat until the kitty has been back above the
+# line and dropped below it again. The balance comes from the read-only excel_kitty function (secret KITTY_TOKEN).
+name: Kitty alert
+
+on:
+  schedule:
+    - cron: '7 1 * * *'   # 01:07 UTC = 08:07 Thai time, daily
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'Send a test push whatever the balance'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: config.js
+          sparse-checkout-cone-mode: false
+      - name: Last state (low / ok)
+        uses: actions/cache/restore@v6
+        with:
+          path: state
+          key: kitty-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: kitty-state-
+      - name: Check the kitty
+        env:
+          KITTY_TOKEN: ${{ secrets.KITTY_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TEST: ${{ inputs.test }}
+        run: |
+          set -euo pipefail
+          url=$(grep -o "SUPABASE_URL: '[^']*'" config.js | cut -d"'" -f2)
+          key=$(grep -o "SUPABASE_ANON_KEY: '[^']*'" config.js | cut -d"'" -f2)
+          low=$(grep -o "LOW: [0-9.]*" config.js | cut -d' ' -f2)
+          bal=$(curl -fsS --retry 3 --retry-all-errors --max-time 30 -X POST "$url/rest/v1/rpc/excel_kitty" \
+                  -H "apikey: $key" -H "Content-Type: application/json" \
+                  -d "$(jq -n --arg t "$KITTY_TOKEN" '{token: $t}')" | jq -r '.[0].balance')
+          before=$(cat state/kitty 2>/dev/null || echo ok)
+          now=$(awk -v b="$bal" -v l="$low" 'BEGIN { print (b < l) ? "low" : "ok" }')
+          shown=$(python3 -c "print(f'{float(\"$bal\"):,.0f}')")
+          lowshown=$(python3 -c "print(f'{float(\"$low\"):,.0f}')")
+          echo "Kitty ฿$shown (alert below ฿$lowshown): $before -> $now"
+          send() {
+            curl -fsS --retry 3 --max-time 30 -H "Title: $1" -H "Tags: $2" -H "Click: https://nigelchurch.github.io/expenses/" \
+              -d "$3" "https://ntfy.sh/$NTFY_TOPIC" > /dev/null
+          }
+          if [ "$TEST" = "true" ]; then
+            send "Kitty alert test" "white_check_mark" "Test push. Jop's kitty is ฿$shown (alert below ฿$lowshown)."
+          elif [ "$now" = low ] && [ "$before" != low ]; then
+            send "Jop's kitty is low" "warning" "Kitty ฿$shown, below ฿$lowshown. Time for a transfer."
+          fi
+          mkdir -p state && echo "$now" > state/kitty
+      - uses: actions/cache/save@v6
+        with:
+          path: state
+          key: kitty-state-${{ github.run_id }}-${{ github.run_attempt }}
