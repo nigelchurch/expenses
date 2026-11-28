@@ -76,7 +76,8 @@ class MockSupabase:
                 m += 12; y -= 1
             self.add({"month": f"{y}-{m:02d}-01", "category": cats[i % len(cats)], "amount": round(5 + (i * 7.31) % 120, 2),
                       "comment": f"seed {i}", "created_by": "seed", "client_id": str(uuid.uuid4())})
-        self.add({"month": "2026-11-01", "category": "Beer", "amount": 12.5, "comment": "Pub quiz", "created_by": "jo", "client_id": str(uuid.uuid4())})
+        self.add({"month": "2026-11-01", "category": "Beer", "amount": 12.5, "comment": "Pub quiz", "created_by": "jo", "client_id": str(uuid.uuid4()),
+                  "created_at": "2026-11-03T10:00:00+00:00"})
 
     def add(self, r):
         if any(x["client_id"] == r["client_id"] for x in self.rows if r.get("client_id")):
@@ -316,6 +317,10 @@ def check():
         exp_nov = sum(r["amount"] for r in mock.rows if r["month"] == "2026-11-01" and r["category"] in main)
         meta = page.text_content("#history-list details[data-month='2026-11-01'] .m-meta")
         rec("month total = main categories only", f"{abs(exp_nov):,.2f}" in meta, f"{meta} expected {exp_nov:,.2f}")
+        pq = page.locator("#history-list .row:has-text('Pub quiz') .r-sub")
+        rec("history shows the date keyed in after the comment", pq.count() == 1 and pq.text_content() == "Pub quiz [3 Nov]",
+            pq.text_content() if pq.count() else "row not found")
+        rec("filter page has no keyed date", "[" not in page.evaluate("document.querySelector('#f-list')?.textContent || ''"))
         page.screenshot(path=str(SHOTS / "03-history.png"))
         page.click("#history-list details[data-month='2026-10-01'] summary")
         page.screenshot(path=str(SHOTS / "04-history-oct-open.png"))

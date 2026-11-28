@@ -857,9 +857,12 @@ async function uploadLines() {
 /* ---------- History page ---------- */
 const rowKey = r => (r.pending ? `cid:${r.client_id}` : `id:${r.id}`);
 // hideCat: on a single-category page, show the comment as the title instead of repeating the category
-function rowHtml(r, showDate = false, dp = 2, hideCat = false) {
+// keyed: History page shows the date the expense was keyed in, e.g. "Taxi [28 Nov]" (not uploaded yet = today)
+const fmtKeyed = r => `[${new Date(r.created_at || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}]`;
+function rowHtml(r, showDate = false, dp = 2, hideCat = false, keyed = false) {
   const orig = r.currency && r.currency !== 'THB' && r.orig_amount != null ? fmtOrig(Number(r.orig_amount), r.currency) : '';
-  const sub = [showDate ? fmtDate(r.month) : '', orig, hideCat ? '' : r.comment].filter(Boolean).map(esc).join(' · ');
+  const comment = hideCat ? '' : [r.comment, keyed ? fmtKeyed(r) : ''].filter(Boolean).join(' ');
+  const sub = [showDate ? fmtDate(r.month) : '', orig, comment].filter(Boolean).map(esc).join(' · ');
   const note = kittyNote(r);
   return `<div class="row${r.pending ? ' pending' : ''}${note ? ' has-note' : ''}" data-key="${esc(rowKey(r))}" role="button" tabindex="0">
     <span class="r-cat">${esc(hideCat ? (r.comment || '(no comment)') : r.category)}</span>
@@ -871,7 +874,7 @@ function rowHtml(r, showDate = false, dp = 2, hideCat = false) {
 let historyGroups = new Map();
 function fillMonth(details) {
   const box = $('.rows', details);
-  if (details.open && !box.childElementCount) box.innerHTML = (historyGroups.get(details.dataset.month) || []).map(r => rowHtml(r)).join('');
+  if (details.open && !box.childElementCount) box.innerHTML = (historyGroups.get(details.dataset.month) || []).map(r => rowHtml(r, false, 2, false, true)).join('');
 }
 function renderHistory() {
   const rows = allRows();
